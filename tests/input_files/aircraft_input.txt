@@ -1,0 +1,2 @@
+0 0 1000 2000 15000 50 0 0   # Time, ID, X, Y, Z, SpeedX, SpeedY, SpeedZ
+5 1 2000 3000 15000 60 0 0   # Second aircraft after 5 seconds
