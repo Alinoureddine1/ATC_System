@@ -1,10 +1,4 @@
 *.o
-launcher
-aircraft
-radar
-computer
-operator_display
-communication
 logs/*
 !logs/.gitkeep
 /Debug/
