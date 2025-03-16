@@ -7,6 +7,7 @@
 #include <errno.h>
 #include "utils.h"
 #include "Plane.h"
+#include "Radar.h"
 
 int main(int argc, char* argv[]) {
     std::string mode;
@@ -14,10 +15,9 @@ int main(int argc, char* argv[]) {
     std::cin >> mode;
 
     if (mode == "write") {
-        std::string logDir = "/tmp/logs"; // will change 
+        std::string logDir = "/tmp/logs";
         std::cout << printTimeStamp() << " Attempting to create directory: " << logDir << "\n";
 
-        
         errno = 0;
         if (mkdir(logDir.c_str(), 0700) == -1 && errno != EEXIST) {
             std::cerr << printTimeStamp() << " Error creating directory " << logDir 
@@ -35,14 +35,14 @@ int main(int argc, char* argv[]) {
 
         for (int i = 0; i < 3; ++i) {
             std::string filepath = logDir + "/" + filenames[i];
-            errno = 0; 
+            errno = 0;
             fd = open(filepath.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0666);
             if (fd == -1) {
                 std::cerr << printTimeStamp() << " Error opening " << filepath 
                           << ": " << strerror(errno) << " (errno: " << errno << ")\n";
                 continue;
             }
-            errno = 0; // Reset errno before write
+            errno = 0;
             if (write(fd, data[i], strlen(data[i])) == -1) {
                 std::cerr << printTimeStamp() << " Error writing to " << filepath 
                           << ": " << strerror(errno) << " (errno: " << errno << ")\n";
@@ -59,14 +59,22 @@ int main(int argc, char* argv[]) {
         planes.emplace_back(2, 2000.0, 2000.0, 16000.0, 0.0, 60.0, 0.0);
         planes.emplace_back(3, 2500.0, 2500.0, 16000.0, -50.0, 0.0, 0.0);
 
+        Radar radar;
+        radar.detectAircraft(planes); 
+
         for (double t = 0.0; t <= 10.0; t += 1.0) {
             std::cout << printTimeStamp() << " Time: " << t << "s\n";
             for (auto& plane : planes) {
                 plane.updatePosition(t);
-                std::cout << "  Plane " << plane.getId() << ": Position (" 
-                          << plane.getX() << ", " << plane.getY() << ", " << plane.getZ() 
-                          << "), Velocity (" << plane.getVx() << ", " << plane.getVy() 
-                          << ", " << plane.getVz() << ")\n";
+            }
+            radar.update(planes, t); 
+            // For now, just print radar data (to be passed to Computer System later)
+            auto positions = radar.getPositions();
+            auto velocities = radar.getVelocities();
+            for (size_t i = 0; i < positions.size(); ++i) {
+                std::cout << "  Radar Data - Plane " << positions[i].planeId 
+                          << ": Position (" << positions[i].x << ", " << positions[i].y << ", " << positions[i].z 
+                          << "), Velocity (" << velocities[i].vx << ", " << velocities[i].vy << ", " << velocities[i].vz << ")\n";
             }
             sleep(1);
         }
