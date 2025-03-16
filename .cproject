@@ -1,32 +1,53 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<?fileVersion 4.0.0?>
-<cproject storage_type_id="org.eclipse.cdt.core.XmlProjectDescriptionStorage">
-    <storageModule moduleId="org.eclipse.cdt.core.settings">
-        <cconfiguration id="com.qnx.qcc.toolChain.debug">
-            <storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.qnx.qcc.toolChain.debug" moduleId="org.eclipse.cdt.core.settings" name="x86_64-debug">
-                <externalSettings/>
-                <extensions>
-                    <extension id="com.qnx.tools.ide.qde.core.QDEBynaryParser" point="org.eclipse.cdt.core.BinaryParser"/>
-                    <extension id="org.eclipse.cdt.core.GCCErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
-                </extensions>
-            </storageModule>
-            <storageModule moduleId="cdtBuildSystem" version="4.0.0">
-                <configuration artifactName="ATC" buildProperties="" id="com.qnx.qcc.toolChain.debug" name="x86_64-debug" parent="org.eclipse.cdt.build.core.emptycfg">
-                    <folderInfo id="com.qnx.qcc.toolChain.debug.root" name="/" resourcePath="">
-                        <toolChain id="com.qnx.qcc.toolChain" name="QNX QCC" superClass="com.qnx.qcc.toolChain">
-                            <targetPlatform binaryParser="com.qnx.tools.ide.qde.core.QDEBynaryParser" id="com.qnx.qcc.targetPlatform"/>
-                            <builder id="cdt.managedbuild.target.gnu.builder" managedBuildOn="false" name="Gnu Make Builder"/>
-                            <tool id="com.qnx.qcc.tool.compiler" name="QCC Compiler" superClass="com.qnx.qcc.tool.compiler">
-                                <option id="com.qnx.qcc.option.compiler.optlevel" superClass="com.qnx.qcc.option.compiler.optlevel" value="com.qnx.qcc.option.compiler.optlevel.0" valueType="enumerated"/>
-                            </tool>
-                            <tool id="com.qnx.qcc.tool.linker" name="QCC Linker" superClass="com.qnx.qcc.tool.linker"/>
-                        </toolChain>
-                    </folderInfo>
-                </configuration>
-            </storageModule>
-        </cconfiguration>
-    </storageModule>
-    <storageModule moduleId="cdtBuildSystem" version="4.0.0">
-        <project id="ATC.null" name="ATC"/>
-    </storageModule>
+<?fileVersion 4.0.0?><cproject storage_type_id="org.eclipse.cdt.core.XmlProjectDescriptionStorage">
+	<storageModule moduleId="org.eclipse.cdt.core.settings">
+		<cconfiguration id="com.qnx.qcc.toolChain.debug">
+			<storageModule buildSystemId="org.eclipse.cdt.managedbuilder.core.configurationDataProvider" id="com.qnx.qcc.toolChain.debug" moduleId="org.eclipse.cdt.core.settings" name="x86_64-debug">
+				<externalSettings/>
+				<extensions>
+					<extension id="com.qnx.tools.ide.qde.core.QDEBynaryParser" point="org.eclipse.cdt.core.BinaryParser"/>
+					<extension id="org.eclipse.cdt.core.GCCErrorParser" point="org.eclipse.cdt.core.ErrorParser"/>
+				</extensions>
+			</storageModule>
+			<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+				<configuration artifactName="ATC" buildProperties="" description="" id="com.qnx.qcc.toolChain.debug" name="x86_64-debug" parent="org.eclipse.cdt.build.core.emptycfg">
+					<folderInfo id="com.qnx.qcc.toolChain.debug.root" name="/" resourcePath="">
+						<toolChain id="com.qnx.qcc.toolChain" name="QNX QCC" superClass="com.qnx.qcc.toolChain">
+							<targetPlatform binaryParser="com.qnx.tools.ide.qde.core.QDEBynaryParser" id="com.qnx.qcc.targetPlatform"/>
+							<builder buildPath="${workspace_loc:/ATC_System}" command="make" id="cdt.managedbuild.target.gnu.builder" keepEnvironmentInBuildfile="false" managedBuildOn="false" name="Gnu Make Builder"/>
+							<tool id="com.qnx.qcc.tool.compiler" name="QCC Compiler" superClass="com.qnx.qcc.tool.compiler">
+								<option id="com.qnx.qcc.option.compiler.optlevel" name="Optimization Level" superClass="com.qnx.qcc.option.compiler.optlevel" value="com.qnx.qcc.option.compiler.optlevel.0" valueType="enumerated"/>
+								<inputType id="com.qnx.qcc.inputType.compiler.542418876" superClass="com.qnx.qcc.inputType.compiler"/>
+							</tool>
+							<tool id="com.qnx.qcc.tool.linker" name="QCC Linker" superClass="com.qnx.qcc.tool.linker"/>
+							<tool id="com.qnx.qcc.tool.assembler.485006432" name="QCC Assembler" superClass="com.qnx.qcc.tool.assembler">
+								<inputType id="com.qnx.qcc.inputType.assembler.1086662922" superClass="com.qnx.qcc.inputType.assembler"/>
+							</tool>
+							<tool id="com.qnx.qcc.tool.archiver.58757252" name="QCC Archiver" superClass="com.qnx.qcc.tool.archiver"/>
+						</toolChain>
+					</folderInfo>
+				</configuration>
+			</storageModule>
+			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
+		</cconfiguration>
+	</storageModule>
+	<storageModule moduleId="cdtBuildSystem" version="4.0.0">
+		<project id="ATC_System.null.205400883" name="ATC_System"/>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
+	<storageModule moduleId="scannerConfiguration">
+		<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId=""/>
+		<scannerConfigBuildInfo instanceId="com.qnx.qcc.toolChain.1874093197">
+			<autodiscovery enabled="true" problemReportingEnabled="true" selectedProfileId="com.qnx.tools.ide.qde.managedbuilder.core.qccScannerInfo"/>
+		</scannerConfigBuildInfo>
+	</storageModule>
+	<storageModule moduleId="refreshScope" versionNumber="2">
+		<configuration configurationName="x86_64-debug">
+			<resource resourceType="PROJECT" workspacePath="/ATC_System"/>
+		</configuration>
+		<configuration configurationName="Default">
+			<resource resourceType="PROJECT" workspacePath="/ATC_System"/>
+		</configuration>
+	</storageModule>
+	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
 </cproject>

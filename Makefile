@@ -1,47 +1,66 @@
-CC = qcc -V8.3.0,gcc_ntox86_64
-CFLAGS = -O0 -g -I./include -lang-c++
-LDFLAGS = -lc++ -lm
+ARTIFACT = ATC
 
-all: launcher aircraft radar computer operator_display communication
+# Build architecture/variant string
+PLATFORM ?= x86_64
 
-launcher: src/launcher/main.o src/shared_memory.o
-	$(CC) -o launcher src/launcher/main.o src/shared_memory.o $(LDFLAGS)
+# Build profile
+BUILD_PROFILE ?= debug
 
-aircraft: src/aircraft/main.o src/shared_memory.o
-	$(CC) -o aircraft src/aircraft/main.o src/shared_memory.o $(LDFLAGS)
+CONFIG_NAME ?= $(PLATFORM)-$(BUILD_PROFILE)
+OUTPUT_DIR = build/$(CONFIG_NAME)
+TARGET = $(OUTPUT_DIR)/$(ARTIFACT)
 
-radar: src/radar/main.o src/shared_memory.o
-	$(CC) -o radar src/radar/main.o src/shared_memory.o $(LDFLAGS)
+# Compiler definitions
+CC = qcc -Vgcc_nto$(PLATFORM)
+CXX = q++ -Vgcc_nto$(PLATFORM)_cxx
+LD = $(CXX)
 
-computer: src/computer/main.o src/shared_memory.o
-	$(CC) -o computer src/computer/main.o src/shared_memory.o $(LDFLAGS)
+# User defined include/preprocessor flags and libraries
+INCLUDES += -I src/include
 
-operator_display: src/operator_display/main.o src/shared_memory.o
-	$(CC) -o operator_display src/operator_display/main.o src/shared_memory.o $(LDFLAGS)
+# Compiler flags for build profiles
+CCFLAGS_release += -O2
+CCFLAGS_debug += -g -O0 -fno-builtin
+CCFLAGS_coverage += -g -O0 -ftest-coverage -fprofile-arcs -nopipe -Wc,-auxbase-strip,$@
+LDFLAGS_coverage += -ftest-coverage -fprofile-arcs
+CCFLAGS_profile += -g -O0 -finstrument-functions
+LIBS_profile += -lprofilingS
 
-communication: src/communication/main.o src/shared_memory.o
-	$(CC) -o communication src/communication/main.o src/shared_memory.o $(LDFLAGS)
+# Generic compiler flags
+CCFLAGS_all += -Wall -fmessage-length=0
+CCFLAGS_all += $(CCFLAGS_$(BUILD_PROFILE))
+LDFLAGS_all += $(LDFLAGS_$(BUILD_PROFILE))
+LIBS_all += $(LIBS_$(BUILD_PROFILE))
+DEPS = -Wp,-MMD,$(@:%.o=%.d),-MT,$@
 
-src/launcher/main.o: src/launcher/main.cpp
-	$(CC) $(CFLAGS) -c src/launcher/main.cpp -o src/launcher/main.o
+# Macro to expand files recursively
+rwildcard = $(wildcard $(addprefix $1/*.,$2)) $(foreach d,$(wildcard $1/*),$(call rwildcard,$d,$2))
 
-src/aircraft/main.o: src/aircraft/main.cpp
-	$(CC) $(CFLAGS) -c src/aircraft/main.cpp -o src/aircraft/main.o
+# Source list
+SRCS = $(call rwildcard, src, c cpp)
 
-src/radar/main.o: src/radar/main.cpp
-	$(CC) $(CFLAGS) -c src/radar/main.cpp -o src/radar/main.o
+# Object files list
+OBJS = $(addprefix $(OUTPUT_DIR)/,$(addsuffix .o, $(basename $(SRCS))))
 
-src/computer/main.o: src/computer/main.cpp
-	$(CC) $(CFLAGS) -c src/computer/main.cpp -o src/computer/main.o
+# Compiling rules
+$(OUTPUT_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
+	$(CC) -c $(DEPS) -o $@ $(INCLUDES) $(CCFLAGS_all) $(CCFLAGS) $<
+$(OUTPUT_DIR)/%.o: %.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) -c $(DEPS) -o $@ $(INCLUDES) $(CCFLAGS_all) $(CCFLAGS) $<
 
-src/operator_display/main.o: src/operator_display/main.cpp
-	$(CC) $(CFLAGS) -c src/operator_display/main.cpp -o src/operator_display/main.o
+# Linking rule
+$(TARGET): $(OBJS)
+	$(LD) -o $(TARGET) $(LDFLAGS_all) $(LDFLAGS) $(OBJS) $(LIBS_all) $(LIBS)
 
-src/communication/main.o: src/communication/main.cpp
-	$(CC) $(CFLAGS) -c src/communication/main.cpp -o src/communication/main.o
-
-src/shared_memory.o: src/shared_memory.cpp
-	$(CC) $(CFLAGS) -c src/shared_memory.cpp -o src/shared_memory.o
+# Rules section for default compilation and linking
+all: $(TARGET)
 
 clean:
-	rm -f *.o src/*/main.o launcher aircraft radar computer operator_display communication
+	rm -fr $(OUTPUT_DIR)
+
+rebuild: clean all
+
+# Inclusion of dependencies
+-include $(OBJS:%.o=%.d)
