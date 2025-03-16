@@ -1,4 +1,2 @@
+build/x86_64-debug/*
 *.o
-logs/*
-!logs/.gitkeep
-/Debug/
