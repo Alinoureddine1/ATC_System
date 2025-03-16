@@ -2,17 +2,20 @@
 <projectDescription>
     <name>ATC</name>
     <comment></comment>
-    <projects></projects>
+    <projects>
+    </projects>
     <buildSpec>
         <buildCommand>
             <name>org.eclipse.cdt.managedbuilder.core.genmakebuilder</name>
             <triggers>clean,full,incremental,</triggers>
-            <arguments></arguments>
+            <arguments>
+            </arguments>
         </buildCommand>
         <buildCommand>
             <name>org.eclipse.cdt.managedbuilder.core.ScannerConfigBuilder</name>
             <triggers>full,incremental,</triggers>
-            <arguments></arguments>
+            <arguments>
+            </arguments>
         </buildCommand>
     </buildSpec>
     <natures>
