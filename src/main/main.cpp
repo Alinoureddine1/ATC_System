@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "Plane.h"
 #include "Radar.h"
+#include "ComputerSystem.h"
 
 int main(int argc, char* argv[]) {
     std::string mode;
@@ -60,6 +61,7 @@ int main(int argc, char* argv[]) {
         planes.emplace_back(3, 2500.0, 2500.0, 16000.0, -50.0, 0.0, 0.0);
 
         Radar radar;
+        ComputerSystem computerSystem(radar); // Default prediction time = 120s
         radar.detectAircraft(planes); 
 
         for (double t = 0.0; t <= 10.0; t += 1.0) {
@@ -67,8 +69,9 @@ int main(int argc, char* argv[]) {
             for (auto& plane : planes) {
                 plane.updatePosition(t);
             }
-            radar.update(planes, t); 
-            // For now, just print radar data (to be passed to Computer System later)
+            radar.update(planes, t);
+            computerSystem.update(t); 
+            
             auto positions = radar.getPositions();
             auto velocities = radar.getVelocities();
             for (size_t i = 0; i < positions.size(); ++i) {
