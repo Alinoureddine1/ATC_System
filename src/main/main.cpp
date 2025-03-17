@@ -11,6 +11,7 @@
 #include "ComputerSystem.h"
 #include "OperatorConsole.h"
 #include "DataDisplay.h"
+#include "CommunicationSystem.h"
 
 int main(int argc, char* argv[]) {
     std::string mode;
@@ -65,7 +66,8 @@ int main(int argc, char* argv[]) {
         Radar radar;
         ComputerSystem computerSystem(radar);
         DataDisplay dataDisplay(computerSystem, planes);
-        OperatorConsole operatorConsole(planes, &dataDisplay);
+        CommunicationSystem commSystem(planes);
+        OperatorConsole operatorConsole(planes, &dataDisplay, &commSystem);
         radar.detectAircraft(planes); // Initial detection
 
         for (double t = 0.0; t <= 20.0; t += 1.0) {
@@ -84,12 +86,10 @@ int main(int argc, char* argv[]) {
                           << "), Velocity (" << velocities[i].vx << ", " << velocities[i].vy << ", " << velocities[i].vz << ")\n";
             }
 
-            // Display airspace every 5 seconds
             if (static_cast<int>(t) % 5 == 0) {
                 dataDisplay.displayAirspace(t);
             }
 
-            
             if (static_cast<int>(t) % 5 == 0 && t > 0) {
                 operatorConsole.displayMenu();
                 if (operatorConsole.processInput()) {

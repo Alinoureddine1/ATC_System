@@ -4,8 +4,9 @@
 #include <sstream>
 #include "utils.h"
 
-OperatorConsole::OperatorConsole(std::vector<Plane>& planes, DataDisplay* dataDisplay, const std::string& logPath)
-    : planes(planes), dataDisplay(dataDisplay), commandLogPath(logPath) {}
+OperatorConsole::OperatorConsole(std::vector<Plane>& planes, DataDisplay* dataDisplay, 
+                                 CommunicationSystem* commSystem, const std::string& logPath)
+    : planes(planes), dataDisplay(dataDisplay), commSystem(commSystem), commandLogPath(logPath) {}
 
 void OperatorConsole::logCommand(const std::string& command) {
     std::ofstream logFile(commandLogPath, std::ios::app);
@@ -18,35 +19,17 @@ void OperatorConsole::logCommand(const std::string& command) {
 }
 
 void OperatorConsole::sendCommand(const Command& command) {
-    for (auto& plane : planes) {
-        if (plane.getId() == command.planeId) {
-            switch (command.code) {
-                case CMD_VELOCITY:
-                    plane = Plane(plane.getId(), plane.getX(), plane.getY(), plane.getZ(),
-                                  command.value[0], command.value[1], command.value[2]);
-                    std::cout << printTimeStamp() << " Updated Plane " << command.planeId 
-                              << " velocity to (" << command.value[0] << ", " 
-                              << command.value[1] << ", " << command.value[2] << ")\n";
-                    break;
-                case CMD_POSITION:
-                    plane = Plane(plane.getId(), command.value[0], command.value[1], command.value[2],
-                                  plane.getVx(), plane.getVy(), plane.getVz());
-                    std::cout << printTimeStamp() << " Updated Plane " << command.planeId 
-                              << " position to (" << command.value[0] << ", " 
-                              << command.value[1] << ", " << command.value[2] << ")\n";
-                    break;
-                default:
-                    std::cout << printTimeStamp() << " Unsupported command code: " << command.code << "\n";
-                    return;
-            }
-            std::stringstream ss;
-            ss << "Command for Plane " << command.planeId << ": code=" << command.code 
-               << ", values=(" << command.value[0] << ", " << command.value[1] << ", " << command.value[2] << ")";
-            logCommand(ss.str());
-            return;
-        }
+    if (commSystem) {
+        commSystem->send(command.planeId, command);
+    } else {
+        std::cout << printTimeStamp() << " No Communication System available\n";
+        return;
     }
-    std::cout << printTimeStamp() << " Plane " << command.planeId << " not found\n";
+    // Log the command
+    std::stringstream ss;
+    ss << "Command for Plane " << command.planeId << ": code=" << command.code 
+       << ", values=(" << command.value[0] << ", " << command.value[1] << ", " << command.value[2] << ")";
+    logCommand(ss.str());
 }
 
 void OperatorConsole::requestPlaneInfo(int planeId) {
