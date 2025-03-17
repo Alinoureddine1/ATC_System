@@ -9,6 +9,8 @@
 #include "Plane.h"
 #include "Radar.h"
 #include "ComputerSystem.h"
+#include "OperatorConsole.h"
+#include "DataDisplay.h"
 
 int main(int argc, char* argv[]) {
     std::string mode;
@@ -61,17 +63,19 @@ int main(int argc, char* argv[]) {
         planes.emplace_back(3, 2500.0, 2500.0, 16000.0, -50.0, 0.0, 0.0);
 
         Radar radar;
-        ComputerSystem computerSystem(radar); // Default prediction time = 120s
-        radar.detectAircraft(planes); 
+        ComputerSystem computerSystem(radar);
+        DataDisplay dataDisplay(computerSystem, planes);
+        OperatorConsole operatorConsole(planes, &dataDisplay);
+        radar.detectAircraft(planes); // Initial detection
 
-        for (double t = 0.0; t <= 10.0; t += 1.0) {
+        for (double t = 0.0; t <= 20.0; t += 1.0) {
             std::cout << printTimeStamp() << " Time: " << t << "s\n";
             for (auto& plane : planes) {
                 plane.updatePosition(t);
             }
             radar.update(planes, t);
-            computerSystem.update(t); 
-            
+            computerSystem.update(t);
+
             auto positions = radar.getPositions();
             auto velocities = radar.getVelocities();
             for (size_t i = 0; i < positions.size(); ++i) {
@@ -79,6 +83,22 @@ int main(int argc, char* argv[]) {
                           << ": Position (" << positions[i].x << ", " << positions[i].y << ", " << positions[i].z 
                           << "), Velocity (" << velocities[i].vx << ", " << velocities[i].vy << ", " << velocities[i].vz << ")\n";
             }
+
+            // Display airspace every 5 seconds
+            if (static_cast<int>(t) % 5 == 0) {
+                dataDisplay.displayAirspace(t);
+            }
+
+            
+            if (static_cast<int>(t) % 5 == 0 && t > 0) {
+                operatorConsole.displayMenu();
+                if (operatorConsole.processInput()) {
+                    while (operatorConsole.processInput()) {
+                        operatorConsole.displayMenu();
+                    }
+                }
+            }
+
             sleep(1);
         }
     } else {

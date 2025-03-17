@@ -20,6 +20,21 @@ public:
     double getVx() const { return vx; }
     double getVy() const { return vy; }
     double getVz() const { return vz; }
+
+    // Assignment operator to allow updates via commands
+    Plane& operator=(const Plane& other) {
+        if (this != &other) {
+            this->id = other.id;
+            this->x = other.x;
+            this->y = other.y;
+            this->z = other.z;
+            this->vx = other.vx;
+            this->vy = other.vy;
+            this->vz = other.vz;
+            this->lastUpdateTime = other.lastUpdateTime;
+        }
+        return *this;
+    }
 };
 
 #endif // PLANE_H
