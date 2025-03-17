@@ -12,6 +12,7 @@
 #include "OperatorConsole.h"
 #include "DataDisplay.h"
 #include "CommunicationSystem.h"
+#include "AirspaceLogger.h"
 
 int main(int argc, char* argv[]) {
     std::string mode;
@@ -68,15 +69,17 @@ int main(int argc, char* argv[]) {
         DataDisplay dataDisplay(computerSystem, planes);
         CommunicationSystem commSystem(planes);
         OperatorConsole operatorConsole(planes, &dataDisplay, &commSystem);
+        AirspaceLogger airspaceLogger(radar);
         radar.detectAircraft(planes); // Initial detection
 
-        for (double t = 0.0; t <= 20.0; t += 1.0) {
+        for (double t = 0.0; t <= 40.0; t += 1.0) { 
             std::cout << printTimeStamp() << " Time: " << t << "s\n";
             for (auto& plane : planes) {
                 plane.updatePosition(t);
             }
             radar.update(planes, t);
             computerSystem.update(t);
+            airspaceLogger.update(t); // Log airspace state
 
             auto positions = radar.getPositions();
             auto velocities = radar.getVelocities();
