@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.mermaid": "markdown",
+        "iostream": "cpp",
+        "iosfwd": "cpp"
+    }
+}
