@@ -4,8 +4,8 @@
 #include <sstream>
 #include "utils.h"
 
-OperatorConsole::OperatorConsole(std::vector<Plane>& planes, const std::string& logPath)
-    : planes(planes), commandLogPath(logPath) {}
+OperatorConsole::OperatorConsole(std::vector<Plane>& planes, DataDisplay* dataDisplay, const std::string& logPath)
+    : planes(planes), dataDisplay(dataDisplay), commandLogPath(logPath) {}
 
 void OperatorConsole::logCommand(const std::string& command) {
     std::ofstream logFile(commandLogPath, std::ios::app);
@@ -18,12 +18,10 @@ void OperatorConsole::logCommand(const std::string& command) {
 }
 
 void OperatorConsole::sendCommand(const Command& command) {
-    // Find the plane by ID
     for (auto& plane : planes) {
         if (plane.getId() == command.planeId) {
             switch (command.code) {
                 case CMD_VELOCITY:
-                    // Update velocity
                     plane = Plane(plane.getId(), plane.getX(), plane.getY(), plane.getZ(),
                                   command.value[0], command.value[1], command.value[2]);
                     std::cout << printTimeStamp() << " Updated Plane " << command.planeId 
@@ -31,7 +29,6 @@ void OperatorConsole::sendCommand(const Command& command) {
                               << command.value[1] << ", " << command.value[2] << ")\n";
                     break;
                 case CMD_POSITION:
-                    // Update position
                     plane = Plane(plane.getId(), command.value[0], command.value[1], command.value[2],
                                   plane.getVx(), plane.getVy(), plane.getVz());
                     std::cout << printTimeStamp() << " Updated Plane " << command.planeId 
@@ -42,7 +39,6 @@ void OperatorConsole::sendCommand(const Command& command) {
                     std::cout << printTimeStamp() << " Unsupported command code: " << command.code << "\n";
                     return;
             }
-            // Log the command
             std::stringstream ss;
             ss << "Command for Plane " << command.planeId << ": code=" << command.code 
                << ", values=(" << command.value[0] << ", " << command.value[1] << ", " << command.value[2] << ")";
@@ -60,7 +56,9 @@ void OperatorConsole::requestPlaneInfo(int planeId) {
             std::cout << "  Position: (" << plane.getX() << ", " << plane.getY() << ", " << plane.getZ() << ")\n";
             std::cout << "  Velocity: (" << plane.getVx() << ", " << plane.getVy() << ", " << plane.getVz() << ")\n";
             std::cout << "  Flight Level: " << static_cast<int>(plane.getZ() / 100) << " (FL)\n";
-            // Log the request
+            if (dataDisplay) {
+                dataDisplay->requestAugmentedInfo(planeId);
+            }
             std::stringstream ss;
             ss << "Requested info for Plane " << planeId;
             logCommand(ss.str());
@@ -84,7 +82,7 @@ bool OperatorConsole::processInput() {
     std::cin >> choice;
 
     if (choice == 4) {
-        return false; 
+        return false; // Continue simulation
     }
 
     if (choice == 1 || choice == 2) {
