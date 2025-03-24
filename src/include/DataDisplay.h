@@ -2,19 +2,29 @@
 #define DATA_DISPLAY_H
 
 #include <vector>
-#include "ComputerSystem.h"
+#include <string>
 #include "commandCodes.h"
 
+/**
+ * DataDisplay listens on a channel for commands (COMMAND_GRID, COMMAND_ONE_PLANE, etc.),
+ * prints the results, and can optionally log them to a file.
+ */
 class DataDisplay {
 private:
-    ComputerSystem& computerSystem; 
-    const std::vector<Plane>& planes; 
-    int requestedPlaneId; 
+    int chid;
+    int fd;
+
+    void receiveMessage();
+    std::string generateGrid(const multipleAircraftDisplay& airspaceInfo);
 
 public:
-    DataDisplay(ComputerSystem& computerSystem, const std::vector<Plane>& planes);
-    void displayAirspace(double currentTime);
+    DataDisplay();
+    int getChid() const;
+    void run();
+    void displayAirspace(double currentTime, const std::vector<Position>& positions);
     void requestAugmentedInfo(int planeId);
+
+    static void* start(void* context);
 };
 
 #endif // DATA_DISPLAY_H

@@ -1,97 +1,199 @@
 #include "OperatorConsole.h"
 #include <iostream>
-#include <fstream>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <queue>
+#include <atomic>
 #include <sstream>
+#include <sys/neutrino.h>
 #include "utils.h"
 
-OperatorConsole::OperatorConsole(std::vector<Plane>& planes, DataDisplay* dataDisplay, 
-                                 CommunicationSystem* commSystem, const std::string& logPath)
-    : planes(planes), dataDisplay(dataDisplay), commSystem(commSystem), commandLogPath(logPath) {}
+pthread_mutex_t OperatorConsole::mutex = PTHREAD_MUTEX_INITIALIZER;
+std::queue<OperatorConsoleResponseMessage> OperatorConsole::responseQueue;
 
-void OperatorConsole::logCommand(const std::string& command) {
-    std::ofstream logFile(commandLogPath, std::ios::app);
-    if (logFile.is_open()) {
-        logFile << printTimeStamp() << " " << command << "\n";
-        logFile.close();
-    } else {
-        std::cerr << printTimeStamp() << " Error opening command log file: " << commandLogPath << "\n";
-    }
+OperatorConsole::OperatorConsole(const std::string& path)
+    : commandLogPath(path), chid(-1)
+{
 }
 
-void OperatorConsole::sendCommand(const Command& command) {
-    if (commSystem) {
-        commSystem->send(command.planeId, command);
-    } else {
-        std::cout << printTimeStamp() << " No Communication System available\n";
+int OperatorConsole::getChid() const {
+    return chid;
+}
+
+void OperatorConsole::run() {
+    chid = ChannelCreate(0);
+    if (chid == -1) {
+        std::cout << "OperatorConsole: ChannelCreate fail.\n";
         return;
     }
-    // Log the command
-    std::stringstream ss;
-    ss << "Command for Plane " << command.planeId << ": code=" << command.code 
-       << ", values=(" << command.value[0] << ", " << command.value[1] << ", " << command.value[2] << ")";
-    logCommand(ss.str());
+
+    pthread_t thr;
+    std::atomic_bool stop(false);
+    pthread_create(&thr, nullptr, &OperatorConsole::cinRead, &stop);
+
+    listen();
+
+    stop = true;
+    pthread_join(thr, nullptr);
+    ChannelDestroy(chid);
 }
 
-void OperatorConsole::requestPlaneInfo(int planeId) {
-    for (const auto& plane : planes) {
-        if (plane.getId() == planeId) {
-            std::cout << printTimeStamp() << " Plane " << planeId << " Info:\n";
-            std::cout << "  Position: (" << plane.getX() << ", " << plane.getY() << ", " << plane.getZ() << ")\n";
-            std::cout << "  Velocity: (" << plane.getVx() << ", " << plane.getVy() << ", " << plane.getVz() << ")\n";
-            std::cout << "  Flight Level: " << static_cast<int>(plane.getZ() / 100) << " (FL)\n";
-            if (dataDisplay) {
-                dataDisplay->requestAugmentedInfo(planeId);
+void OperatorConsole::listen() {
+    OperatorConsoleCommandMessage msg;
+    int rcvid;
+
+    while (true) {
+        rcvid = MsgReceive(chid, &msg, sizeof(msg), nullptr);
+        if (rcvid == -1) {
+            std::cerr << "OperatorConsole: MsgReceive fail.\n";
+            continue;
+        }
+        switch(msg.systemCommandType) {
+            case OPCON_CONSOLE_COMMAND_GET_USER_COMMAND: {
+                pthread_mutex_lock(&mutex);
+                if (responseQueue.empty()) {
+                    OperatorConsoleResponseMessage resp;
+                    resp.userCommandType = OPCON_USER_COMMAND_NO_COMMAND_AVAILABLE;
+                    MsgReply(rcvid, EOK, &resp, sizeof(resp));
+                } else {
+                    OperatorConsoleResponseMessage resp = responseQueue.front();
+                    responseQueue.pop();
+                    MsgReply(rcvid, EOK, &resp, sizeof(resp));
+                }
+                pthread_mutex_unlock(&mutex);
+                break;
             }
-            std::stringstream ss;
-            ss << "Requested info for Plane " << planeId;
-            logCommand(ss.str());
-            return;
+            case OPCON_CONSOLE_COMMAND_ALERT: {
+                std::cout << printTimeStamp() << " [OperatorConsole] ALERT: planes "
+                          << msg.plane1 << " & " << msg.plane2
+                          << " collision in " << msg.collisionTimeSeconds << "s\n";
+                OperatorConsoleResponseMessage r;
+                r.userCommandType = OPCON_USER_COMMAND_NO_COMMAND_AVAILABLE;
+                MsgReply(rcvid, EOK, &r, sizeof(r));
+                break;
+            }
+            case COMMAND_EXIT_THREAD:
+                MsgReply(rcvid, EOK, nullptr, 0);
+                return;
+            default:
+                std::cout << "OperatorConsole: unknown sysCommand=" << msg.systemCommandType << "\n";
+                MsgError(rcvid, ENOSYS);
+                break;
         }
     }
-    std::cout << printTimeStamp() << " Plane " << planeId << " not found\n";
+}
+
+void* OperatorConsole::cinRead(void* param) {
+    std::atomic_bool* stop = static_cast<std::atomic_bool*>(param);
+
+    int fd = open("/data/home/qnxuser/commandlog.txt", O_CREAT|O_WRONLY|O_APPEND, 0666);
+    if (fd == -1) {
+        std::cout << "OperatorConsole: cannot open commandlog.\n";
+    }
+
+    while (!(*stop)) {
+        std::string line;
+        if (!std::getline(std::cin, line)) {
+            sleep(1);
+            continue;
+        }
+        if (line.empty()) continue;
+
+        if (fd != -1) {
+            std::string t = printTimeStamp() + " " + line + "\n";
+            write(fd, t.c_str(), t.size());
+        }
+
+        std::vector<std::string> tokens;
+        tokenize(tokens, line);
+        if (tokens.empty()) continue;
+
+        if (tokens[0] == OPCON_COMMAND_STRING_SHOW_PLANE) {
+            if (tokens.size()<2) {
+                std::cout << "Usage: show_plane <planeId>\n";
+                continue;
+            }
+            int planeId = std::stoi(tokens[1]);
+            OperatorConsoleResponseMessage r;
+            r.userCommandType = OPCON_USER_COMMAND_DISPLAY_PLANE_INFO;
+            r.planeNumber = planeId;
+            pthread_mutex_lock(&mutex);
+            responseQueue.push(r);
+            pthread_mutex_unlock(&mutex);
+
+        } else if (tokens[0] == OPCON_COMMAND_STRING_SET_VELOCITY) {
+            if (tokens.size()<5) {
+                std::cout << "Usage: set_velocity <planeId> <vx> <vy> <vz>\n";
+                continue;
+            }
+            int planeId = std::stoi(tokens[1]);
+            double vx = std::stod(tokens[2]);
+            double vy = std::stod(tokens[3]);
+            double vz = std::stod(tokens[4]);
+            OperatorConsoleResponseMessage r;
+            r.userCommandType = OPCON_USER_COMMAND_SET_PLANE_VELOCITY;
+            r.planeNumber = planeId;
+            r.newVelocity = {vx, vy, vz};
+            pthread_mutex_lock(&mutex);
+            responseQueue.push(r);
+            pthread_mutex_unlock(&mutex);
+
+        } else if (tokens[0] == OPCON_COMMAND_STRING_UPDATE_CONGESTION) {
+            if (tokens.size()<2) {
+                std::cout << "Usage: update_congestion <seconds>\n";
+                continue;
+            }
+            int c = std::stoi(tokens[1]);
+            OperatorConsoleResponseMessage r;
+            r.userCommandType = OPCON_USER_COMMAND_UPDATE_CONGESTION;
+            r.newCongestionValue = c;
+            pthread_mutex_lock(&mutex);
+            responseQueue.push(r);
+            pthread_mutex_unlock(&mutex);
+
+        } else {
+            std::cout << "Unknown console cmd: " << tokens[0] << "\n";
+        }
+    }
+
+    if (fd != -1) close(fd);
+    return nullptr;
+}
+
+void OperatorConsole::tokenize(std::vector<std::string>& dest, std::string& str) {
+    std::stringstream ss(str);
+    std::string tok;
+    while (std::getline(ss, tok, ' ')) {
+        dest.push_back(tok);
+    }
+}
+
+void OperatorConsole::logCommand(const std::string& cmd) {
+    (void)cmd;
 }
 
 void OperatorConsole::displayMenu() {
-    std::cout << "\nOperator Console Menu:\n";
-    std::cout << "1. Send Velocity Command (e.g., change speed)\n";
-    std::cout << "2. Send Position Command (e.g., change position)\n";
-    std::cout << "3. Request Plane Info\n";
-    std::cout << "4. Continue Simulation\n";
-    std::cout << "Enter choice (1-4): ";
+    std::cout<<"OperatorConsole Commands:\n"
+             <<"  show_plane <planeId>\n"
+             <<"  set_velocity <planeId> <vx> <vy> <vz>\n"
+             <<"  update_congestion <sec>\n";
 }
 
 bool OperatorConsole::processInput() {
-    int choice;
-    std::cin >> choice;
+    return false;
+}
 
-    if (choice == 4) {
-        return false; // Continue simulation
-    }
+void OperatorConsole::sendCommand(const Command& command) {
+    std::cout << "[OperatorConsole] direct send plane=" << command.planeId
+              << " code="<<command.code<<"\n";
+}
 
-    if (choice == 1 || choice == 2) {
-        int planeId;
-        double v1, v2, v3;
-        std::cout << "Enter Plane ID: ";
-        std::cin >> planeId;
-        std::cout << "Enter values (e.g., vx vy vz for velocity, or x y z for position): ";
-        std::cin >> v1 >> v2 >> v3;
-
-        Command command;
-        command.planeId = planeId;
-        command.code = (choice == 1) ? CMD_VELOCITY : CMD_POSITION;
-        command.value[0] = v1;
-        command.value[1] = v2;
-        command.value[2] = v3;
-        command.timestamp = time(nullptr);
-
-        sendCommand(command);
-    } else if (choice == 3) {
-        int planeId;
-        std::cout << "Enter Plane ID: ";
-        std::cin >> planeId;
-        requestPlaneInfo(planeId);
-    } else {
-        std::cout << printTimeStamp() << " Invalid choice. Try again.\n";
-    }
-    return true; 
+void OperatorConsole::requestPlaneInfo(int planeId) {
+    OperatorConsoleResponseMessage r;
+    r.userCommandType = OPCON_USER_COMMAND_DISPLAY_PLANE_INFO;
+    r.planeNumber = planeId;
+    pthread_mutex_lock(&mutex);
+    responseQueue.push(r);
+    pthread_mutex_unlock(&mutex);
 }

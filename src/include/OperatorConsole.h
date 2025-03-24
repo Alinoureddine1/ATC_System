@@ -1,29 +1,40 @@
 #ifndef OPERATOR_CONSOLE_H
 #define OPERATOR_CONSOLE_H
 
-#include <vector>
 #include <string>
-#include "Plane.h"
-#include "DataDisplay.h"
-#include "CommunicationSystem.h"
+#include <queue>
+#include <pthread.h>
+#include <vector>
 #include "commandCodes.h"
 
+/**
+ * OperatorConsole: reads user commands from stdin, logs them,
+ * and sends them to ComputerSystem by queueing responses or pulses.
+ */
 class OperatorConsole {
 private:
-    std::vector<Plane>& planes; 
-    DataDisplay* dataDisplay; 
-    CommunicationSystem* commSystem; 
-    std::string commandLogPath; 
-    void logCommand(const std::string& command);
+    std::string commandLogPath;
+    int chid;
+
+    static pthread_mutex_t mutex;
+    static std::queue<OperatorConsoleResponseMessage> responseQueue;
+
+    void logCommand(const std::string& cmd);
+    void listen();
+    static void* cinRead(void* param);
+    static void tokenize(std::vector<std::string>& dest, std::string& str);
 
 public:
-    OperatorConsole(std::vector<Plane>& planes, DataDisplay* dataDisplay = nullptr, 
-                    CommunicationSystem* commSystem = nullptr, 
-                    const std::string& logPath = "/tmp/logs/commandlog.txt");
-    void sendCommand(const Command& command);
-    void requestPlaneInfo(int planeId);
+    OperatorConsole(const std::string& logPath = "/data/home/qnxuser/logs/commandlog.txt");
+    int  getChid() const;
+    void run();
     void displayMenu();
     bool processInput();
+
+    void sendCommand(const Command& command);
+    void requestPlaneInfo(int planeId);
+
+    static void* start(void* context);
 };
 
 #endif // OPERATOR_CONSOLE_H

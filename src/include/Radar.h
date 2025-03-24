@@ -3,19 +3,18 @@
 
 #include <vector>
 #include "Plane.h"
-#include "commandCodes.h"
 
+/**
+ * Radar updates plane positions every second and writes to /shm_radar_data.
+ */
 class Radar {
 private:
-    std::vector<Plane*> trackedPlanes; // Pointers to planes for simulation
+    std::vector<Plane*> trackedPlanes;
 
 public:
     Radar();
-    void detectAircraft(std::vector<Plane>& planes); // Simulate PSR
-    void interrogateAircraft(); // Simulate SSR
-    void update(std::vector<Plane>& planes, double currentTime);
-    std::vector<Position> getPositions() const;
-    std::vector<Velocity> getVelocities() const;
+    void detectAircraft(std::vector<Plane>& planes);
+    void update(double currentTime);
 };
 
 #endif // RADAR_H

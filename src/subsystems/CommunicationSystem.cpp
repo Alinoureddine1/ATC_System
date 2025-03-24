@@ -1,51 +1,66 @@
 #include "CommunicationSystem.h"
 #include <iostream>
-#include <fstream>
-#include <sstream>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <cstdio>
+#include <cmath>
 #include "utils.h"
 
-CommunicationSystem::CommunicationSystem(std::vector<Plane>& planes, const std::string& logPath)
-    : planes(planes), transmissionLogPath(logPath) {}
-
-void CommunicationSystem::logTransmission(const std::string& message) {
-    std::ofstream logFile(transmissionLogPath, std::ios::app);
-    if (logFile.is_open()) {
-        logFile << printTimeStamp() << " " << message << "\n";
-        logFile.close();
-    } else {
-        std::cerr << printTimeStamp() << " Error opening transmission log file: " << transmissionLogPath << "\n";
-    }
+CommunicationSystem::CommunicationSystem(const std::string& logPath)
+    : transmissionLogPath(logPath)
+{
 }
 
 void CommunicationSystem::send(int planeId, const Command& command) {
-    for (auto& plane : planes) {
-        if (plane.getId() == planeId) {
-            switch (command.code) {
-                case CMD_VELOCITY:
-                    plane = Plane(plane.getId(), plane.getX(), plane.getY(), plane.getZ(),
-                                  command.value[0], command.value[1], command.value[2]);
-                    std::cout << printTimeStamp() << " Transmitted to Plane " << planeId 
-                              << ": Set velocity to (" << command.value[0] << ", " 
-                              << command.value[1] << ", " << command.value[2] << ")\n";
-                    break;
-                case CMD_POSITION:
-                    plane = Plane(plane.getId(), command.value[0], command.value[1], command.value[2],
-                                  plane.getVx(), plane.getVy(), plane.getVz());
-                    std::cout << printTimeStamp() << " Transmitted to Plane " << planeId 
-                              << ": Set position to (" << command.value[0] << ", " 
-                              << command.value[1] << ", " << command.value[2] << ")\n";
-                    break;
-                default:
-                    std::cout << printTimeStamp() << " Unsupported command code: " << command.code << "\n";
-                    return;
-            }
-            // Log the transmission
-            std::stringstream ss;
-            ss << "Transmitted to Plane " << planeId << ": code=" << command.code 
-               << ", values=(" << command.value[0] << ", " << command.value[1] << ", " << command.value[2] << ")";
-            logTransmission(ss.str());
-            return;
+    std::string msg = "CommSystem: direct send to plane=" + std::to_string(planeId)
+                    + " code=" + std::to_string(command.code)
+                    + " val(" + std::to_string(command.value[0]) + ","
+                              + std::to_string(command.value[1]) + ","
+                              + std::to_string(command.value[2]) + ")";
+    logTransmission(msg);
+    std::cout << msg << std::endl;
+}
+
+void CommunicationSystem::logTransmission(const std::string& message) {
+    FILE* fp = fopen(transmissionLogPath.c_str(), "a");
+    if (fp) {
+        fprintf(fp, "%s %s\n", printTimeStamp().c_str(), message.c_str());
+        fclose(fp);
+    }
+}
+
+void CommunicationSystem::run() {
+    // open /shm_commands
+    int shm_fd = shm_open(SHM_COMMANDS, O_RDWR, 0666);
+    if (shm_fd == -1) {
+        std::cerr << "CommunicationSystem: cannot open " << SHM_COMMANDS << "\n";
+        return;
+    }
+    CommandQueue* cq = static_cast<CommandQueue*>(
+        mmap(nullptr, sizeof(CommandQueue), PROT_READ|PROT_WRITE, MAP_SHARED, shm_fd, 0)
+    );
+    if (cq == MAP_FAILED) {
+        std::cerr << "CommunicationSystem: cannot mmap " << SHM_COMMANDS << "\n";
+        close(shm_fd);
+        return;
+    }
+
+    // loop reading new commands
+    while (true) {
+        if (cq->head != cq->tail) {
+            // pop
+            Command cmd = cq->commands[cq->head];
+            cq->head = (cq->head + 1) % MAX_COMMANDS;
+
+            // "send" it
+            send(cmd.planeId, cmd);
+        } else {
+            // no commands, just wait
+            sleep(1);
         }
     }
-    std::cout << printTimeStamp() << " Plane " << planeId << " not found for transmission\n";
+
+    munmap(cq, sizeof(CommandQueue));
+    close(shm_fd);
 }
