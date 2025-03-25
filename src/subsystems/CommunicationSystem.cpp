@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <cstdio>
 #include <cmath>
+#include <sys/stat.h>
 #include "utils.h"
 
 CommunicationSystem::CommunicationSystem(const std::string& logPath)
@@ -23,6 +24,9 @@ void CommunicationSystem::send(int planeId, const Command& command) {
 }
 
 void CommunicationSystem::logTransmission(const std::string& message) {
+    // Ensure log directory exists
+    mkdir("/tmp/atc/logs", 0777);
+    
     FILE* fp = fopen(transmissionLogPath.c_str(), "a");
     if (fp) {
         fprintf(fp, "%s %s\n", printTimeStamp().c_str(), message.c_str());
@@ -49,14 +53,11 @@ void CommunicationSystem::run() {
     // loop reading new commands
     while (true) {
         if (cq->head != cq->tail) {
-            // pop
             Command cmd = cq->commands[cq->head];
             cq->head = (cq->head + 1) % MAX_COMMANDS;
 
-            // "send" it
             send(cmd.planeId, cmd);
         } else {
-            // no commands, just wait
             sleep(1);
         }
     }

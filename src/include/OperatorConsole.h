@@ -23,9 +23,12 @@ private:
     void listen();
     static void* cinRead(void* param);
     static void tokenize(std::vector<std::string>& dest, std::string& str);
+    
+    // Initialize channel ID in shared memory
+    void registerChannelId();
 
 public:
-    OperatorConsole(const std::string& logPath = "/data/home/qnxuser/logs/commandlog.txt");
+    OperatorConsole(const std::string& logPath = DEFAULT_COMMAND_LOG_PATH);
     int  getChid() const;
     void run();
     void displayMenu();

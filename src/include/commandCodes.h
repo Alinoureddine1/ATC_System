@@ -3,13 +3,21 @@
 
 #include <vector>
 #include <ctime>
+#include <string>
 
 /** POSIX shared memory names **/
 #define SHM_RADAR_DATA "/shm_radar_data"
 #define SHM_COMMANDS   "/shm_commands"
+#define SHM_CHANNELS   "/shm_channels" 
 
 #define MAX_PLANES    10
 #define MAX_COMMANDS  10
+
+// Default log file paths
+#define DEFAULT_AIRSPACE_LOG_PATH "/tmp/atc/logs/airspacelog.txt"
+#define DEFAULT_COMMAND_LOG_PATH "/tmp/atc/logs/commandlog.txt"
+#define DEFAULT_TRANSMISSION_LOG_PATH "/tmp/atc/logs/transmissionlog.txt"
+#define DEFAULT_PLANE_INPUT_PATH "/tmp/atc/plane_input.txt"
 
 /** Command codes **/
 enum CommandCode {
@@ -51,6 +59,14 @@ enum OperatorConsoleUserCommand {
     OPCON_USER_COMMAND_DISPLAY_PLANE_INFO   = 1,
     OPCON_USER_COMMAND_UPDATE_CONGESTION    = 2,
     OPCON_USER_COMMAND_SET_PLANE_VELOCITY   = 3
+};
+
+// Structure to share channel IDs between processes
+struct ChannelIds {
+    int operatorChid;
+    int displayChid;
+    int loggerChid;
+    int computerChid;
 };
 
 // Data structures
@@ -127,13 +143,11 @@ struct dataDisplayCommandMessage {
     } commandBody;
 };
 
-
 struct OperatorConsoleCommandMessage {
     int systemCommandType;
     int plane1, plane2;
     double collisionTimeSeconds;
 };
-
 
 struct OperatorConsoleResponseMessage {
     int userCommandType;

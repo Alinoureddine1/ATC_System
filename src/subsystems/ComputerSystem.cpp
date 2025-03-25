@@ -22,13 +22,64 @@
  * If OperatorConsole sets plane velocities, we queue them in /shm_commands for CommunicationSystem.
  */
 
-ComputerSystem::ComputerSystem(double predTime)
-    : chid(-1), operatorChid(-1), displayChid(-1), loggerChid(-1),
-      predictionTime(predTime),
-      MIN_VERTICAL_SEPARATION(1000.0),
-      MIN_HORIZONTAL_SEPARATION(3000.0),
-      congestionDegreeSeconds(120)
+ ComputerSystem::ComputerSystem(double predTime)
+ : chid(-1), operatorChid(-1), displayChid(-1), loggerChid(-1),
+   predictionTime(predTime),
+   MIN_VERTICAL_SEPARATION(1000.0),
+   MIN_HORIZONTAL_SEPARATION(3000.0),
+   congestionDegreeSeconds(120)
 {
+}
+
+bool ComputerSystem::initializeChannelIds() {
+    int retries = 0;
+    bool initialized = false;
+    
+    while (retries < 10 && !initialized) {
+        int shmChannelsFd = shm_open(SHM_CHANNELS, O_RDWR, 0666);
+        if (shmChannelsFd == -1) {
+            std::cerr << "ComputerSystem: Cannot open channel IDs shared memory\n";
+            sleep(1);
+            retries++;
+            continue;
+        }
+        
+        ChannelIds* channels = (ChannelIds*)mmap(nullptr, sizeof(ChannelIds), 
+                                                PROT_READ|PROT_WRITE, MAP_SHARED, shmChannelsFd, 0);
+        if (channels == MAP_FAILED) {
+            std::cerr << "ComputerSystem: Cannot map channel IDs shared memory\n";
+            close(shmChannelsFd);
+            sleep(1);
+            retries++;
+            continue;
+        }
+        
+        
+        if (channels->operatorChid != -1 && 
+            channels->displayChid != -1 && 
+            channels->loggerChid != -1) {
+            
+            operatorChid = channels->operatorChid;
+            displayChid = channels->displayChid;
+            loggerChid = channels->loggerChid;
+            
+            channels->computerChid = chid;
+            
+            initialized = true;
+        } else {
+            std::cout << "ComputerSystem: Waiting for other subsystems to initialize..." << std::endl;
+        }
+        
+        munmap(channels, sizeof(ChannelIds));
+        close(shmChannelsFd);
+        
+        if (!initialized) {
+            sleep(1);
+            retries++;
+        }
+    }
+    
+    return initialized;
 }
 
 void ComputerSystem::run() {
@@ -39,15 +90,24 @@ void ComputerSystem::run() {
         return;
     }
 
-   
+    std::cout << "ComputerSystem: Channel created with ID: " << chid << std::endl;
+    
+    
+    if (!initializeChannelIds()) {
+        std::cerr << "ComputerSystem: Failed to initialize channel IDs after multiple attempts\n";
+        return;
+    }
+    
+    std::cout << "ComputerSystem: All channel IDs initialized. Ready to create periodic tasks.\n";
+    
+    
     createPeriodicTasks();
 
-   
     listen();
 }
 
+
 void ComputerSystem::createPeriodicTasks() {
-    
     struct {
         int code;
         int interval;
@@ -62,7 +122,7 @@ void ComputerSystem::createPeriodicTasks() {
 
     int coid = ConnectAttach(0, 0, chid, _NTO_SIDE_CHANNEL, 0);
     if (coid == -1) {
-        std::cerr << "ComputerSystem: ConnectAttach fail.\n";
+        std::cerr << "ComputerSystem: ConnectAttach fail: " << strerror(errno) << "\n";
         return;
     }
 
@@ -72,7 +132,7 @@ void ComputerSystem::createPeriodicTasks() {
         SIGEV_PULSE_INIT(&sev, coid, SIGEV_PULSE_PRIO_INHERIT, tasks[i].code, 0);
         timer_t tid;
         if (timer_create(CLOCK_MONOTONIC, &sev, &tid) == -1) {
-            std::cerr << "ComputerSystem: timer_create fail.\n";
+            std::cerr << "ComputerSystem: timer_create fail: " << strerror(errno) << "\n";
             continue;
         }
         // set intervals

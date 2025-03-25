@@ -7,6 +7,7 @@
 #include <atomic>
 #include <sstream>
 #include <sys/neutrino.h>
+#include <sys/stat.h>
 #include "utils.h"
 
 pthread_mutex_t OperatorConsole::mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -21,16 +22,49 @@ int OperatorConsole::getChid() const {
     return chid;
 }
 
+void OperatorConsole::registerChannelId() {
+    int shmChannelsFd = shm_open(SHM_CHANNELS, O_RDWR, 0666);
+    if (shmChannelsFd == -1) {
+        std::cerr << "OperatorConsole: Cannot open channel IDs shared memory\n";
+        return;
+    }
+    
+    ChannelIds* channels = (ChannelIds*)mmap(nullptr, sizeof(ChannelIds), 
+                                            PROT_READ|PROT_WRITE, MAP_SHARED, shmChannelsFd, 0);
+    if (channels == MAP_FAILED) {
+        std::cerr << "OperatorConsole: Cannot map channel IDs shared memory\n";
+        close(shmChannelsFd);
+        return;
+    }
+    
+    // Register our channel ID
+    channels->operatorChid = chid;
+    
+    munmap(channels, sizeof(ChannelIds));
+    close(shmChannelsFd);
+    
+    std::cout << "OperatorConsole: Registered channel ID " << chid << " in shared memory\n";
+}
+
 void OperatorConsole::run() {
+    // Ensure log directory exists
+    mkdir("/tmp/atc/logs", 0777);
+    
     chid = ChannelCreate(0);
     if (chid == -1) {
         std::cout << "OperatorConsole: ChannelCreate fail.\n";
         return;
     }
+    
+    std::cout << "OperatorConsole: Channel created with ID: " << chid << std::endl;
+    
+    registerChannelId();
 
     pthread_t thr;
     std::atomic_bool stop(false);
     pthread_create(&thr, nullptr, &OperatorConsole::cinRead, &stop);
+
+    displayMenu();
 
     listen();
 

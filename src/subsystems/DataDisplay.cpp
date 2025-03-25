@@ -7,10 +7,11 @@
 #include <cstring>
 #include <sstream>
 #include <sys/neutrino.h>
+#include <sys/mman.h>
 #include "utils.h"
 
-DataDisplay::DataDisplay()
-    : chid(-1), fd(-1)
+DataDisplay::DataDisplay(const std::string& logPath)
+    : chid(-1), fd(-1), logPath(logPath)
 {
 }
 
@@ -18,15 +19,49 @@ int DataDisplay::getChid() const {
     return chid;
 }
 
-void DataDisplay::run() {
-    chid = ChannelCreate(0);
-    if (chid == -1) {
-        std::cerr << "DataDisplay: ChannelCreate fail.\n";
+void DataDisplay::registerChannelId() {
+    int shmChannelsFd = shm_open(SHM_CHANNELS, O_RDWR, 0666);
+    if (shmChannelsFd == -1) {
+        std::cerr << "DataDisplay: Cannot open channel IDs shared memory\n";
         return;
     }
-    fd = open("/data/home/qnxuser/airspacelog.txt", O_CREAT|O_WRONLY|O_APPEND, 0666);
+    
+    ChannelIds* channels = (ChannelIds*)mmap(nullptr, sizeof(ChannelIds), 
+                                            PROT_READ|PROT_WRITE, MAP_SHARED, shmChannelsFd, 0);
+    if (channels == MAP_FAILED) {
+        std::cerr << "DataDisplay: Cannot map channel IDs shared memory\n";
+        close(shmChannelsFd);
+        return;
+    }
+    
+    // Register our channel ID
+    channels->displayChid = chid;
+    
+    munmap(channels, sizeof(ChannelIds));
+    close(shmChannelsFd);
+    
+    std::cout << "DataDisplay: Registered channel ID " << chid << " in shared memory\n";
+}
+
+void DataDisplay::run() {
+    // Ensure log directory exists
+    mkdir("/tmp/atc/logs", 0777);
+    
+    chid = ChannelCreate(0);
+    if (chid == -1) {
+        std::cerr << "DataDisplay: ChannelCreate fail: " << strerror(errno) << "\n";
+        return;
+    }
+    
+    std::cout << "DataDisplay: Channel created with ID: " << chid << std::endl;
+    
+    // Register our channel ID in shared memory
+    registerChannelId();
+    
+    // Open log file
+    fd = open(logPath.c_str(), O_CREAT|O_WRONLY|O_APPEND, 0666);
     if (fd == -1) {
-        std::cerr << "DataDisplay: cannot open log.\n";
+        std::cerr << "DataDisplay: cannot open log: " << strerror(errno) << "\n";
     }
 
     receiveMessage();

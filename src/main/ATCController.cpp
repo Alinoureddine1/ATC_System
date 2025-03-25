@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include "commandCodes.h"
 #include "utils.h"
 
@@ -11,6 +12,10 @@ static void handleSig(int){running=0;}
 
 int main(int argc, char* argv[]) {
     std::cout << printTimeStamp() << " ATCController starting\n";
+
+    // Create directory structure if it doesn't exist
+    mkdir("/tmp/atc", 0777);
+    mkdir("/tmp/atc/logs", 0777);
 
     // create radar data shm
     int shmRadarFd = shm_open(SHM_RADAR_DATA, O_CREAT|O_RDWR, 0666);
@@ -27,6 +32,16 @@ int main(int argc, char* argv[]) {
     cmdQueue->head=0;
     cmdQueue->tail=0;
 
+    // Create channels shm for inter-process communication
+    int shmChannelsFd = shm_open(SHM_CHANNELS, O_CREAT|O_RDWR, 0666);
+    ftruncate(shmChannelsFd, sizeof(ChannelIds));
+    ChannelIds* channelIds = (ChannelIds*)mmap(nullptr, sizeof(ChannelIds),
+        PROT_READ|PROT_WRITE, MAP_SHARED, shmChannelsFd, 0);
+    channelIds->operatorChid = -1;
+    channelIds->displayChid = -1;
+    channelIds->loggerChid = -1;
+    channelIds->computerChid = -1;
+
     // fork each subsystem
     std::string basePath="/tmp/atc";
 
@@ -35,31 +50,39 @@ int main(int argc, char* argv[]) {
         execl((basePath+"/Radar").c_str(),"Radar", (char*)nullptr);
         _exit(1);
     }
+    
     pid_t p2=fork();
     if (p2==0){
         execl((basePath+"/ComputerSystem").c_str(),"ComputerSystem",(char*)nullptr);
         _exit(1);
     }
+    
     pid_t p3=fork();
     if (p3==0){
         execl((basePath+"/DataDisplay").c_str(),"DataDisplay",(char*)nullptr);
         _exit(1);
     }
+    
     pid_t p4=fork();
     if (p4==0){
         execl((basePath+"/CommunicationSystem").c_str(),"CommunicationSystem",(char*)nullptr);
         _exit(1);
     }
+    
     pid_t p5=fork();
     if (p5==0){
         execl((basePath+"/OperatorConsole").c_str(),"OperatorConsole",(char*)nullptr);
         _exit(1);
     }
+    
     pid_t p6=fork();
     if (p6==0){
         execl((basePath+"/AirspaceLogger").c_str(),"AirspaceLogger",(char*)nullptr);
         _exit(1);
     }
+
+    // Allow time for processes to initialize
+    sleep(2);
 
     signal(SIGINT, handleSig);
     while(running) pause();
@@ -67,10 +90,15 @@ int main(int argc, char* argv[]) {
     // cleanup
     shm_unlink(SHM_RADAR_DATA);
     shm_unlink(SHM_COMMANDS);
+    shm_unlink(SHM_CHANNELS);
+    
     munmap(radarData, sizeof(RadarData));
     munmap(cmdQueue, sizeof(CommandQueue));
+    munmap(channelIds, sizeof(ChannelIds));
+    
     close(shmRadarFd);
     close(shmCmdFd);
+    close(shmChannelsFd);
 
     std::cout << printTimeStamp() << " ATCController shutting down\n";
     return 0;

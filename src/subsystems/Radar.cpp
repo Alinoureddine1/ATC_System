@@ -18,8 +18,18 @@ void Radar::detectAircraft(std::vector<Plane>& planes) {
 
 void Radar::update(double currentTime) {
     // update planes
-    for (auto plane : trackedPlanes) {
+    for (size_t i = 0; i < trackedPlanes.size(); /* no increment here */) {
+        Plane* plane = trackedPlanes[i];
         plane->updatePosition(currentTime);
+        
+        // Check if plane has left airspace (completely)
+        if (!isPositionWithinBounds(plane->getX(), plane->getY(), plane->getZ())) {
+            std::cout << printTimeStamp() << " [Radar] Plane " << plane->getId() 
+                      << " has left the airspace.\n";
+            trackedPlanes.erase(trackedPlanes.begin() + i);
+        } else {
+            i++; // Only increment if we didn't remove a plane
+        }
     }
 
     // write states to shared memory

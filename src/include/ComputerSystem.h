@@ -24,16 +24,15 @@ private:
     std::vector<Position> positionsSnapshot;
     std::vector<Velocity> velocitiesSnapshot;
 
-    // Setup timers for periodic tasks
     void createPeriodicTasks();
 
-    // The main loop that waits for pulses or messages
     void listen();
 
-    // Called whenever we receive a timer pulse
     void handlePulse(int code, double &currentTime);
 
-    // Logging / command checking
+    bool initializeChannelIds();
+
+    
     void logSystem(bool toFile);
     void opConCheck();
     void sendDisplayCommand(int planeNumber);

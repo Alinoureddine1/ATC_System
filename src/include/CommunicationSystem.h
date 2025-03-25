@@ -14,10 +14,8 @@ private:
     void logTransmission(const std::string& message);
 
 public:
-    CommunicationSystem(const std::string& logPath = "/data/home/qnxuser/logs/transmissionlog.txt");
+    CommunicationSystem(const std::string& logPath = DEFAULT_TRANSMISSION_LOG_PATH);
     void send(int planeId, const Command& command);
-
-    
     void run();
 };
 
