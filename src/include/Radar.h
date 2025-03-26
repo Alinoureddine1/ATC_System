@@ -2,6 +2,7 @@
 #define RADAR_H
 
 #include <vector>
+#include <mutex>
 #include "Plane.h"
 
 /**
@@ -10,11 +11,18 @@
 class Radar {
 private:
     std::vector<Plane*> trackedPlanes;
+    std::mutex planesMutex; 
 
 public:
     Radar();
-    void detectAircraft(std::vector<Plane>& planes);
+    ~Radar();
+    
+    void detectAircraft(std::vector<Plane*>& planes, double currentTime);
+    
     void update(double currentTime);
+    
+    void addPlane(Plane* plane, double currentTime);
+    void removePlane(int planeId);
 };
 
 #endif // RADAR_H

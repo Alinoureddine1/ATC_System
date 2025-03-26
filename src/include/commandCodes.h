@@ -9,6 +9,7 @@
 #define SHM_RADAR_DATA "/shm_radar_data"
 #define SHM_COMMANDS   "/shm_commands"
 #define SHM_CHANNELS   "/shm_channels" 
+#define SHM_SYNC_READY "/shm_sync_ready"
 
 #define MAX_PLANES    10
 #define MAX_COMMANDS  10
@@ -18,12 +19,23 @@
 #define DEFAULT_COMMAND_LOG_PATH "/tmp/atc/logs/commandlog.txt"
 #define DEFAULT_TRANSMISSION_LOG_PATH "/tmp/atc/logs/transmissionlog.txt"
 #define DEFAULT_PLANE_INPUT_PATH "/tmp/atc/plane_input.txt"
+#define DEFAULT_SYSTEM_LOG_PATH "/tmp/atc/logs/system.log"
+#define DEFAULT_RADAR_LOG_PATH "/tmp/atc/logs/radar.log"
+#define DEFAULT_COMPUTER_SYSTEM_LOG_PATH "/tmp/atc/logs/computer_system.log"
+#define DEFAULT_PLANE_LOG_PATH "/tmp/atc/logs/plane.log"
 
 /** Command codes **/
 enum CommandCode {
     CMD_VELOCITY = 1,
     CMD_POSITION = 2
 };
+
+
+// Fixed channel IDs for subsystems
+#define OPERATOR_CONSOLE_CHANNEL_ID  1
+#define DATA_DISPLAY_CHANNEL_ID      2
+#define AIRSPACE_LOGGER_CHANNEL_ID   3
+#define COMPUTER_SYSTEM_CHANNEL_ID   4
 
 /** Timer pulse codes **/
 #define AIRSPACE_VIOLATION_CONSTRAINT_TIMER 1

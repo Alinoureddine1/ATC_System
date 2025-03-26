@@ -9,10 +9,13 @@
 #include <sys/neutrino.h>
 #include <sys/mman.h>
 #include "utils.h"
+#include "shm_utils.h"
+#include <math.h>
 
 DataDisplay::DataDisplay(const std::string& logPath)
     : chid(-1), fd(-1), logPath(logPath)
 {
+    logDataDisplayMessage("DataDisplay initialized with log path: " + logPath);
 }
 
 int DataDisplay::getChid() const {
@@ -20,40 +23,35 @@ int DataDisplay::getChid() const {
 }
 
 void DataDisplay::registerChannelId() {
-    int shmChannelsFd = shm_open(SHM_CHANNELS, O_RDWR, 0666);
-    if (shmChannelsFd == -1) {
-        std::cerr << "DataDisplay: Cannot open channel IDs shared memory\n";
-        return;
+    bool success = accessSharedMemory<ChannelIds>(
+        SHM_CHANNELS,
+        sizeof(ChannelIds),
+        O_RDWR,
+        false,
+        [this](ChannelIds* channels) {
+            // Register channel ID
+            channels->displayChid = DATA_DISPLAY_CHANNEL_ID;
+            logDataDisplayMessage("Registered channel ID " + std::to_string(chid) + " in shared memory");
+        }
+    );
+    
+    if (!success) {
+        logDataDisplayMessage("Failed to register channel ID in shared memory", LOG_ERROR);
     }
-    
-    ChannelIds* channels = (ChannelIds*)mmap(nullptr, sizeof(ChannelIds), 
-                                            PROT_READ|PROT_WRITE, MAP_SHARED, shmChannelsFd, 0);
-    if (channels == MAP_FAILED) {
-        std::cerr << "DataDisplay: Cannot map channel IDs shared memory\n";
-        close(shmChannelsFd);
-        return;
-    }
-    
-    // Register our channel ID
-    channels->displayChid = chid;
-    
-    munmap(channels, sizeof(ChannelIds));
-    close(shmChannelsFd);
-    
-    std::cout << "DataDisplay: Registered channel ID " << chid << " in shared memory\n";
 }
 
 void DataDisplay::run() {
     // Ensure log directory exists
-    mkdir("/tmp/atc/logs", 0777);
+    ensureLogDirectories();
     
-    chid = ChannelCreate(0);
+    chid = ChannelCreate(DATA_DISPLAY_CHANNEL_ID);
+    
     if (chid == -1) {
-        std::cerr << "DataDisplay: ChannelCreate fail: " << strerror(errno) << "\n";
+        logDataDisplayMessage("ChannelCreate failed: " + std::string(strerror(errno)), LOG_ERROR);
         return;
     }
     
-    std::cout << "DataDisplay: Channel created with ID: " << chid << std::endl;
+    logDataDisplayMessage("Channel created with ID: " + std::to_string(chid));
     
     // Register our channel ID in shared memory
     registerChannelId();
@@ -61,70 +59,157 @@ void DataDisplay::run() {
     // Open log file
     fd = open(logPath.c_str(), O_CREAT|O_WRONLY|O_APPEND, 0666);
     if (fd == -1) {
-        std::cerr << "DataDisplay: cannot open log: " << strerror(errno) << "\n";
+        logDataDisplayMessage("Failed to open log file: " + std::string(strerror(errno)), LOG_ERROR);
+    } else {
+        logDataDisplayMessage("Log file opened successfully: " + logPath);
     }
 
     receiveMessage();
 
-    if (fd != -1) close(fd);
+    if (fd != -1) {
+        close(fd);
+    }
     ChannelDestroy(chid);
+    
+    logDataDisplayMessage("DataDisplay shutdown complete");
 }
 
 void DataDisplay::receiveMessage() {
     dataDisplayCommandMessage msg;
     int rcvid;
+    
+    logDataDisplayMessage("Starting message processing loop");
+    
     while (true) {
+        // Zero out the message buffer before receiving
+        memset(&msg, 0, sizeof(msg));
+        
         rcvid = MsgReceive(chid, &msg, sizeof(msg), nullptr);
         if (rcvid == -1) {
-            std::cerr << "DataDisplay: MsgReceive fail.\n";
+            logDataDisplayMessage("MsgReceive failed: " + std::string(strerror(errno)), LOG_ERROR);
+            sleep(1);  // Add delay before retry
             continue;
         }
+        
         switch (msg.commandType) {
             case COMMAND_ONE_PLANE: {
                 MsgReply(rcvid, EOK, nullptr, 0);
-                std::cout << printTimeStamp() << " [DataDisplay] Single plane "
-                          << msg.commandBody.one.aircraftID
-                          << " pos(" << msg.commandBody.one.position.x << ","
-                                     << msg.commandBody.one.position.y << ","
-                                     << msg.commandBody.one.position.z << ")"
-                          << " vel(" << msg.commandBody.one.velocity.x << ","
-                                     << msg.commandBody.one.velocity.y << ","
-                                     << msg.commandBody.one.velocity.z << ")\n";
+                
+                // Validate data before using
+                if (finite(msg.commandBody.one.position.x) && 
+                    finite(msg.commandBody.one.position.y) && 
+                    finite(msg.commandBody.one.position.z) &&
+                    finite(msg.commandBody.one.velocity.x) && 
+                    finite(msg.commandBody.one.velocity.y) && 
+                    finite(msg.commandBody.one.velocity.z)) {
+                    
+                    std::string planeInfo = "Single plane " + 
+                        std::to_string(msg.commandBody.one.aircraftID) +
+                        " pos(" + std::to_string(msg.commandBody.one.position.x) + "," +
+                                  std::to_string(msg.commandBody.one.position.y) + "," +
+                                  std::to_string(msg.commandBody.one.position.z) + ")" +
+                        " vel(" + std::to_string(msg.commandBody.one.velocity.x) + "," +
+                                  std::to_string(msg.commandBody.one.velocity.y) + "," +
+                                  std::to_string(msg.commandBody.one.velocity.z) + ")";
+                    
+                    logDataDisplayMessage(planeInfo);
+                } else {
+                    logDataDisplayMessage("Received invalid data for plane", LOG_WARNING);
+                }
                 break;
             }
+            
             case COMMAND_MULTIPLE_PLANE: {
                 MsgReply(rcvid, EOK, nullptr, 0);
-                for (size_t i=0; i<msg.commandBody.multiple.numberOfAircrafts; i++) {
+                
+                // Safety check for valid pointers and data
+                if (msg.commandBody.multiple.planeIDArray == nullptr ||
+                    msg.commandBody.multiple.positionArray == nullptr || 
+                    msg.commandBody.multiple.velocityArray == nullptr ||
+                    msg.commandBody.multiple.numberOfAircrafts > MAX_PLANES) {
+                    
+                    logDataDisplayMessage("Invalid multiple aircraft data received", LOG_ERROR);
+                    break;
+                }
+                
+                for (size_t i=0; i < msg.commandBody.multiple.numberOfAircrafts; i++) {
+                    // Get refs to make code more readable
                     int pid = msg.commandBody.multiple.planeIDArray[i];
-                    Vec3 pp = msg.commandBody.multiple.positionArray[i];
-                    Vec3 vv = msg.commandBody.multiple.velocityArray[i];
-                    std::cout << printTimeStamp() << " [DataDisplay] Plane " << pid
-                              << " pos(" << pp.x << "," << pp.y << "," << pp.z << ")"
-                              << " vel(" << vv.x << "," << vv.y << "," << vv.z << ")\n";
+                    Vec3& pp = msg.commandBody.multiple.positionArray[i];
+                    Vec3& vv = msg.commandBody.multiple.velocityArray[i];
+                    
+                    // Validate data before using
+                    if (!finite(pp.x) || !finite(pp.y) || !finite(pp.z) ||
+                        !finite(vv.x) || !finite(vv.y) || !finite(vv.z)) {
+                        logDataDisplayMessage("Invalid data for plane " + std::to_string(pid), LOG_WARNING);
+                        continue;
+                    }
+                    
+                    std::string planeInfo = "Plane " + std::to_string(pid) +
+                        " pos(" + std::to_string(pp.x) + "," +
+                                  std::to_string(pp.y) + "," +
+                                  std::to_string(pp.z) + ")" +
+                        " vel(" + std::to_string(vv.x) + "," +
+                                  std::to_string(vv.y) + "," +
+                                  std::to_string(vv.z) + ")";
+                    
+                    logDataDisplayMessage(planeInfo);
                 }
                 break;
             }
+            
             case COMMAND_GRID: {
-                std::string g = generateGrid(msg.commandBody.multiple);
                 MsgReply(rcvid, EOK, nullptr, 0);
-                std::cout << printTimeStamp() << " [DataDisplay] GRID:\n" << g << "\n";
+                
+                // Safety check for valid data
+                if (msg.commandBody.multiple.planeIDArray == nullptr ||
+                    msg.commandBody.multiple.positionArray == nullptr || 
+                    msg.commandBody.multiple.velocityArray == nullptr ||
+                    msg.commandBody.multiple.numberOfAircrafts > MAX_PLANES) {
+                    
+                    logDataDisplayMessage("Invalid data for grid display", LOG_ERROR);
+                    break;
+                }
+                
+                std::string g = generateGrid(msg.commandBody.multiple);
+                logDataDisplayMessage("GRID:\n" + g);
                 break;
             }
+            
             case COMMAND_LOG: {
-                std::string g = generateGrid(msg.commandBody.multiple);
                 MsgReply(rcvid, EOK, nullptr, 0);
-                std::cout << printTimeStamp() << " [DataDisplay] LOG:\n" << g << "\n";
+                
+                // Safety check for valid data
+                if (msg.commandBody.multiple.planeIDArray == nullptr ||
+                    msg.commandBody.multiple.positionArray == nullptr || 
+                    msg.commandBody.multiple.velocityArray == nullptr ||
+                    msg.commandBody.multiple.numberOfAircrafts > MAX_PLANES) {
+                    
+                    logDataDisplayMessage("Invalid data for logging", LOG_ERROR);
+                    break;
+                }
+                
+                std::string g = generateGrid(msg.commandBody.multiple);
+                logDataDisplayMessage("LOG:\n" + g);
+                
                 if (fd != -1) {
                     std::string s = printTimeStamp() + " LOG:\n" + g + "\n";
-                    write(fd, s.c_str(), s.size());
+                    if (write(fd, s.c_str(), s.size()) == -1) {
+                        logDataDisplayMessage("Failed to write to log file: " + 
+                                            std::string(strerror(errno)), LOG_ERROR);
+                    }
                 }
                 break;
             }
+            
             case COMMAND_EXIT_THREAD:
+                logDataDisplayMessage("Received exit command");
                 MsgReply(rcvid, EOK, nullptr, 0);
                 return;
+                
             default:
-                std::cerr << "DataDisplay: unknown commandType=" << msg.commandType << "\n";
+                logDataDisplayMessage("Unknown command type: " + 
+                                    std::to_string(msg.commandType), LOG_WARNING);
                 MsgError(rcvid, ENOSYS);
                 break;
         }
@@ -137,47 +222,67 @@ std::string DataDisplay::generateGrid(const multipleAircraftDisplay& airspaceInf
     constexpr int cell = 4000;
 
     std::string grid[rowSize][colSize];
-    for (size_t i=0; i<airspaceInfo.numberOfAircrafts; i++) {
+    
+    // Validate input data before processing
+    if (!airspaceInfo.planeIDArray || !airspaceInfo.positionArray || 
+        !airspaceInfo.velocityArray || airspaceInfo.numberOfAircrafts > MAX_PLANES) {
+        logDataDisplayMessage("Invalid airspace data received", LOG_ERROR);
+        return "Error: Invalid data received";
+    }
+    
+    // Place planes in grid
+    for (size_t i=0; i < airspaceInfo.numberOfAircrafts; i++) {
+        // Validate data for this aircraft
+        if (!finite(airspaceInfo.positionArray[i].x) || 
+            !finite(airspaceInfo.positionArray[i].y)) {
+            continue;  // Skip invalid position data
+        }
+        
         double px = airspaceInfo.positionArray[i].x;
         double py = airspaceInfo.positionArray[i].y;
         int planeId = airspaceInfo.planeIDArray[i];
 
-        for (int r=0; r<rowSize; r++) {
+        // Find cell for this plane
+        for (int r=0; r < rowSize; r++) {
             double yMin = cell*r, yMax = cell*(r+1);
-            if (py>=yMin && py<yMax) {
-                for (int c=0; c<colSize; c++) {
-                    double xMin = cell*c, xMax=cell*(c+1);
-                    if (px>=xMin && px<xMax) {
-                        if (!grid[r][c].empty()) grid[r][c]+=",";
-                        grid[r][c]+=std::to_string(planeId);
+            if (py >= yMin && py < yMax) {
+                for (int c=0; c < colSize; c++) {
+                    double xMin = cell*c, xMax = cell*(c+1);
+                    if (px >= xMin && px < xMax) {
+                        if (!grid[r][c].empty()) grid[r][c] += ",";
+                        grid[r][c] += std::to_string(planeId);
                     }
                 }
             }
         }
     }
 
+    // Generate the grid as a string
     std::stringstream out;
-    for (int r=0; r<rowSize; r++) {
+    for (int r=0; r < rowSize; r++) {
         out << "\n";
-        for (int c=0; c<colSize; c++) {
-            if (grid[r][c].empty()) out<<"| ";
-            else out<<"|"<<grid[r][c];
+        for (int c=0; c < colSize; c++) {
+            if (grid[r][c].empty()) out << "| ";
+            else out << "|" << grid[r][c];
         }
     }
-    out<<"\n";
+    out << "\n";
     return out.str();
 }
 
 void DataDisplay::displayAirspace(double currentTime, const std::vector<Position>& positions) {
-    std::cout << printTimeStamp() << " DataDisplay: airspace t=" << currentTime << "s\n";
+    logDataDisplayMessage("Airspace at t=" + std::to_string(currentTime) + "s");
+    
     for (auto &p : positions) {
-        std::cout << "  plane " << p.planeId << " => ("
-                  << p.x << "," << p.y << "," << p.z << ")\n";
+        logDataDisplayMessage("Plane " + std::to_string(p.planeId) + 
+                            " => (" + std::to_string(p.x) + "," + 
+                                      std::to_string(p.y) + "," + 
+                                      std::to_string(p.z) + ")");
     }
 }
 
 void DataDisplay::requestAugmentedInfo(int planeId) {
-    std::cout << "[DataDisplay] requestAugmentedInfo(plane=" << planeId << ")\n";
+    logDataDisplayMessage("Requesting augmented info for plane " + std::to_string(planeId));
 }
 
 void* DataDisplay::start(void* context) {
