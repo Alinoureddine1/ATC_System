@@ -1,21 +1,22 @@
 #ifndef COMMUNICATION_SYSTEM_H
 #define COMMUNICATION_SYSTEM_H
 
-#include <vector>
 #include <string>
-#include "Plane.h"
 #include "commandCodes.h"
 
+/**
+ * CommunicationSystem reads commands from /shm_commands,
+ * simulates sending them to planes (i.e. prints to stdout/log).
+ */
 class CommunicationSystem {
 private:
-    std::vector<Plane>& planes; 
-    std::string transmissionLogPath; 
+    std::string transmissionLogPath;
     void logTransmission(const std::string& message);
 
 public:
-    CommunicationSystem(std::vector<Plane>& planes, 
-                        const std::string& logPath = "/tmp/logs/transmissionlog.txt");
+    CommunicationSystem(const std::string& logPath = DEFAULT_TRANSMISSION_LOG_PATH);
     void send(int planeId, const Command& command);
+    void run();
 };
 
 #endif // COMMUNICATION_SYSTEM_H
