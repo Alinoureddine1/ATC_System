@@ -1,0 +1,76 @@
+name: Build ATC System
+
+on:
+  push:
+    branches: [ main, stable-build ]
+  pull_request:
+    branches: [ main, stable-build ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: qnxsoftware/qnx-sdk:7.0
+      options: --user root
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up QNX environment
+      run: |
+        echo "QNX_HOST=/opt/qnx700/host/linux/x86_64" >> $GITHUB_ENV
+        echo "QNX_TARGET=/opt/qnx700/target/qnx7" >> $GITHUB_ENV
+        echo "/opt/qnx700/host/linux/x86_64/usr/bin" >> $GITHUB_PATH
+    
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y make
+    
+    - name: Build Debug Version
+      run: |
+        make clean
+        make all
+    
+    - name: Build Release Version
+      if: github.ref == 'refs/heads/main'
+      run: |
+        make clean
+        make BUILD_PROFILE=release
+    
+    - name: Upload debug artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: atc-debug-build
+        path: build/x86_64-debug/
+        retention-days: 7
+    
+    - name: Upload release artifacts
+      if: github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@v3
+      with:
+        name: atc-release-build
+        path: build/x86_64-release/
+        retention-days: 14
+    
+    - name: Prepare release (main branch only)
+      if: github.ref == 'refs/heads/main'
+      run: |
+        TAG_NAME="release-$(date +%Y%m%d-%H%M)"
+        echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
+        
+        # Create release package
+        mkdir -p release
+        cp build/x86_64-release/* release/
+        tar -czf atc-system-${TAG_NAME}.tar.gz release/
+    
+    - name: Create Release
+      if: github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ env.TAG_NAME }}
+        name: Release ${{ env.TAG_NAME }}
+        files: atc-system-${{ env.TAG_NAME }}.tar.gz
+        draft: false
+        prerelease: false
+        token: ${{ secrets.GITHUB_TOKEN }}
