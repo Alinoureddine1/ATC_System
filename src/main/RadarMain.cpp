@@ -4,16 +4,15 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <unistd.h> // For sleep function (also contains pause)
+#include <unistd.h> 
 #include <vector>
 #include <string>
 #include <map>
 #include <sys/stat.h>
 #include <signal.h>
 #include <thread>
-#include <memory> // For std::unique_ptr
+#include <memory> 
 
-// Signal handler for clean shutdown
 static volatile sig_atomic_t running = 1;
 static void handleSig(int) { running = 0; }
 
@@ -61,7 +60,6 @@ std::map<int, std::vector<std::unique_ptr<Plane>>> parseInputFile(const std::str
             continue;
         }
         
-        // Verify coordinates are within airspace
         if (!isPositionWithinBounds(x, y, z)) {
             logRadarMessage("Warning: Initial position for plane " + std::to_string(id) + 
                           " is outside airspace, adjusting: (" + 
@@ -78,7 +76,6 @@ std::map<int, std::vector<std::unique_ptr<Plane>>> parseInputFile(const std::str
             else if (z > AIRSPACE_Z_MAX) z = AIRSPACE_Z_MAX;
         }
         
-        // Create a new Plane and add it to the appropriate time bucket
         timeToPlanes[time].push_back(std::unique_ptr<Plane>(new Plane(id, x, y, z, speedX, speedY, speedZ)));
     }
     
@@ -88,14 +85,12 @@ std::map<int, std::vector<std::unique_ptr<Plane>>> parseInputFile(const std::str
 }
 
 void runRadarSystem() {
-    // Vector of plane pointers
     std::vector<std::unique_ptr<Plane>> activePlanes;
     
     // Add default planes
     activePlanes.push_back(std::unique_ptr<Plane>(new Plane(1, 10000.0, 20000.0, 5000.0, 100.0, 50.0, 0.0)));
     activePlanes.push_back(std::unique_ptr<Plane>(new Plane(2, 30000.0, 40000.0, 7000.0, -50.0, 100.0, 0.0)));
     
-    // Create directory for input file if it doesn't exist
     mkdir("/tmp/atc", 0777);
     
     // Parse input file (if exists)
@@ -122,7 +117,6 @@ void runRadarSystem() {
         }
     }
     
-    // Create radar and provide pointers to planes
     Radar radar;
     std::vector<Plane*> planePointers;
     for (const auto& plane : activePlanes) {
@@ -132,7 +126,6 @@ void runRadarSystem() {
     
     double t = 0.0;
     while (running) {
-        // Check if any new planes should be added at this time
         int currentTimeInt = static_cast<int>(t);
         if (timeToPlanes.find(currentTimeInt) != timeToPlanes.end()) {
             for (auto& plane : timeToPlanes[currentTimeInt]) {
@@ -153,7 +146,6 @@ void runRadarSystem() {
                 }
             }
             
-            // Update radar with new planes
             planePointers.clear();
             for (const auto& plane : activePlanes) {
                 planePointers.push_back(plane.get());
@@ -168,23 +160,19 @@ void runRadarSystem() {
 }
 
 int main() {
-    // Set up signal handler for graceful termination
     signal(SIGINT, handleSig);
     signal(SIGTERM, handleSig);
     
     logRadarMessage("Subsystem starting");
     
-    // Start the radar system in a thread so we can handle signals
     std::thread radarThread(runRadarSystem);
     
-    // Wait for termination signal
     while (running) {
-        sleep(1); // Use sleep(1) instead of pause() for better portability
+        sleep(1); 
     }
     
     logRadarMessage("Shutdown signal received", LOG_WARNING);
     
-    // Wait for radar thread to complete
     if (radarThread.joinable()) {
         radarThread.join();
     }

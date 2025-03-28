@@ -16,8 +16,11 @@ class ComputerSystem
 private:
     int chid;
     int operatorChid;
+    pid_t operatorPid;
     int displayChid;
+    pid_t displayPid; 
     int loggerChid;
+    pid_t loggerPid; 
 
     double predictionTime;
     const double MIN_VERTICAL_SEPARATION;
@@ -41,17 +44,19 @@ private:
 
     bool initializeChannelIds();
 
+    void registerChannelId();
+
     void logSystem(bool toFile);
     void opConCheck();
     void sendDisplayCommand(int planeNumber);
     void sendVelocityUpdateToComm(int planeNumber, Vec3 newVelocity);
-    void sendLogToAirspaceLogger(double currentTime); // Added this line
+    void sendLogToAirspaceLogger(double currentTime);
 
     bool checkSeparation(const Position &pos1, const Position &pos2) const;
     bool predictSeparation(const Position &pos1, const Velocity &vel1,
                            const Position &pos2, const Velocity &vel2) const;
 
-    void violationCheck(); // checks for collisions
+    void violationCheck();
     void checkForFutureViolation(const Position &pos1, const Velocity &vel1,
                                  const Position &pos2, const Velocity &vel2,
                                  int plane1, int plane2);

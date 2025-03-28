@@ -16,12 +16,9 @@
 static volatile sig_atomic_t running = 1;
 static pid_t childPids[6] = {-1, -1, -1, -1, -1, -1};
 
-// More robust signal handler
 static void handleSig(int sig) {
-    // Set running flag to false
     running = 0;
     
-    // In signal handler, only perform async-signal-safe operations
     for (int i = 0; i < 6; i++) {
         if (childPids[i] > 0) {
             kill(childPids[i], SIGTERM);
@@ -29,12 +26,10 @@ static void handleSig(int sig) {
     }
 }
 
-// Function to monitor system status
 void monitorSystemStatus() {
     logSystemMessage("System monitoring thread started");
     
     while (running) {
-        // Check shared memory for alive flags
         bool syncSuccess = accessSharedMemory<int>(
             SHM_SYNC_READY,
             sizeof(int),
@@ -44,7 +39,6 @@ void monitorSystemStatus() {
                 if (*syncReady == 0) {
                     logSystemMessage("WARNING: Shared memory sync flag reset to 0!", LOG_WARNING);
                     
-                    // Restore sync flag
                     bool restoreSuccess = accessSharedMemory<int>(
                         SHM_SYNC_READY,
                         sizeof(int),
@@ -73,20 +67,21 @@ void monitorSystemStatus() {
             O_RDONLY,
             false,
             [](ChannelIds* channels) {
-                if (channels->operatorChid != OPERATOR_CONSOLE_CHANNEL_ID || 
-                    channels->displayChid != DATA_DISPLAY_CHANNEL_ID || 
-                    channels->loggerChid != AIRSPACE_LOGGER_CHANNEL_ID || 
-                    channels->computerChid != COMPUTER_SYSTEM_CHANNEL_ID) {
-                    logSystemMessage("WARNING: One or more subsystem channel IDs are incorrect!", LOG_WARNING);
+                if (channels->operatorChid <= 0 || channels->operatorPid <= 0 || 
+                    channels->displayChid <= 0 || channels->displayPid <= 0 || 
+                    channels->loggerChid <= 0 || channels->loggerPid <= 0 || 
+                    channels->computerChid <= 0 || channels->computerPid <= 0) {
                     
-                    if (channels->operatorChid != OPERATOR_CONSOLE_CHANNEL_ID) 
-                        logSystemMessage("OperatorConsole channel ID incorrect", LOG_WARNING);
-                    if (channels->displayChid != DATA_DISPLAY_CHANNEL_ID) 
-                        logSystemMessage("DataDisplay channel ID incorrect", LOG_WARNING);
-                    if (channels->loggerChid != AIRSPACE_LOGGER_CHANNEL_ID) 
-                        logSystemMessage("AirspaceLogger channel ID incorrect", LOG_WARNING);
-                    if (channels->computerChid != COMPUTER_SYSTEM_CHANNEL_ID) 
-                        logSystemMessage("ComputerSystem channel ID incorrect", LOG_WARNING);
+                    logSystemMessage("WARNING: One or more subsystem channel IDs or PIDs are missing or invalid!", LOG_WARNING);
+                    
+                    if (channels->operatorChid <= 0 || channels->operatorPid <= 0) 
+                        logSystemMessage("OperatorConsole channel ID or PID missing", LOG_WARNING);
+                    if (channels->displayChid <= 0 || channels->displayPid <= 0) 
+                        logSystemMessage("DataDisplay channel ID or PID missing", LOG_WARNING);
+                    if (channels->loggerChid <= 0 || channels->loggerPid <= 0) 
+                        logSystemMessage("AirspaceLogger channel ID or PID missing", LOG_WARNING);
+                    if (channels->computerChid <= 0 || channels->computerPid <= 0) 
+                        logSystemMessage("ComputerSystem channel ID or PID missing", LOG_WARNING);
                 }
             }
         );
@@ -95,26 +90,23 @@ void monitorSystemStatus() {
             logSystemMessage("Failed to check channel IDs", LOG_WARNING);
         }
         
-        sleep(5); // Check every 5 seconds
+        sleep(5); 
     }
     
     logSystemMessage("System monitoring thread terminated");
 }
 
-// Initialize all system components
 bool initializeSystemComponents() {
-    // Create directory structure if it doesn't exist
     mkdir("/tmp/atc", 0777);
     mkdir("/tmp/atc/logs", 0777);
 
-    // Initialize sync flag in shared memory
     bool syncSuccess = accessSharedMemory<int>(
         SHM_SYNC_READY,
         sizeof(int),
         O_CREAT | O_RDWR,
         true,
         [](int* sync) {
-            *sync = 0; // Not ready yet
+            *sync = 0; 
         }
     );
     
@@ -131,7 +123,6 @@ bool initializeSystemComponents() {
         true,
         [](RadarData* rd) {
             rd->numPlanes = 0;
-            // Initialize all positions and velocities to zero
             for (int i = 0; i < MAX_PLANES; i++) {
                 rd->positions[i].planeId = -1;
                 rd->positions[i].x = 0;
@@ -153,7 +144,6 @@ bool initializeSystemComponents() {
         return false;
     }
 
-    // Create commands shared memory
     bool cmdSuccess = accessSharedMemory<CommandQueue>(
         SHM_COMMANDS,
         sizeof(CommandQueue),
@@ -162,7 +152,6 @@ bool initializeSystemComponents() {
         [](CommandQueue* cq) {
             cq->head = 0;
             cq->tail = 0;
-            // Initialize all commands to null values
             for (int i = 0; i < MAX_COMMANDS; i++) {
                 cq->commands[i].planeId = -1;
                 cq->commands[i].code = CMD_POSITION;
@@ -186,11 +175,15 @@ bool initializeSystemComponents() {
         O_CREAT | O_RDWR,
         true,
         [](ChannelIds* channels) {
-            // Initialize channel IDs to match the fixed values in commandCodes.h
-            channels->operatorChid = OPERATOR_CONSOLE_CHANNEL_ID;
-            channels->displayChid = DATA_DISPLAY_CHANNEL_ID;
-            channels->loggerChid = AIRSPACE_LOGGER_CHANNEL_ID;
-            channels->computerChid = COMPUTER_SYSTEM_CHANNEL_ID;
+            // Initialize to invalid values to detect when real IDs are registered
+            channels->operatorChid = -1;
+            channels->operatorPid = -1;  
+            channels->displayChid = -1;
+            channels->displayPid = -1;   
+            channels->loggerChid = -1;
+            channels->loggerPid = -1;    
+            channels->computerChid = -1;
+            channels->computerPid = -1;  
         }
     );
     
@@ -203,7 +196,6 @@ bool initializeSystemComponents() {
 }
 
 int main(int argc, char* argv[]) {
-    // Set log level for the system
     setLogLevel(LOG_INFO);
     
     logSystemMessage("Air Traffic Control System starting");
@@ -215,10 +207,8 @@ int main(int argc, char* argv[]) {
 
     logSystemMessage("Starting subsystems");
 
-    // Set base path for executables
     std::string basePath = "/tmp/atc";
 
-    // Start processes in the order where IDs should be assigned
     pid_t pids[6] = {-1, -1, -1, -1, -1, -1};
     
     // Start OperatorConsole first (ID 1)
@@ -228,8 +218,8 @@ int main(int argc, char* argv[]) {
         logSystemMessage("Failed to exec OperatorConsole: " + std::string(strerror(errno)), LOG_ERROR);
         _exit(1);
     }
-    childPids[4] = pids[4];  // Store for signal handler
-    sleep(2);  // Wait for it to register
+    childPids[4] = pids[4];  
+    sleep(2);  
     
     // Start DataDisplay next (ID 2)
     pids[2] = fork();
@@ -238,8 +228,8 @@ int main(int argc, char* argv[]) {
         logSystemMessage("Failed to exec DataDisplay: " + std::string(strerror(errno)), LOG_ERROR);
         _exit(1);
     }
-    childPids[2] = pids[2];  // Store for signal handler
-    sleep(2);  // Wait for it to register
+    childPids[2] = pids[2];  
+    sleep(2);  
     
     // Start AirspaceLogger next (ID 3)
     pids[5] = fork();
@@ -248,8 +238,8 @@ int main(int argc, char* argv[]) {
         logSystemMessage("Failed to exec AirspaceLogger: " + std::string(strerror(errno)), LOG_ERROR);
         _exit(1);
     }
-    childPids[5] = pids[5];  // Store for signal handler
-    sleep(2);  // Wait for it to register
+    childPids[5] = pids[5];  
+    sleep(2);  
     
     // Start ComputerSystem next (ID 4)
     pids[1] = fork();
@@ -258,8 +248,8 @@ int main(int argc, char* argv[]) {
         logSystemMessage("Failed to exec ComputerSystem: " + std::string(strerror(errno)), LOG_ERROR);
         _exit(1);
     }
-    childPids[1] = pids[1];  // Store for signal handler
-    sleep(2);  // Wait for it to register
+    childPids[1] = pids[1];  
+    sleep(2); 
     
     // Start other components that don't need specific IDs
     pids[0] = fork();    
@@ -268,7 +258,7 @@ int main(int argc, char* argv[]) {
         logSystemMessage("Failed to exec Radar: " + std::string(strerror(errno)), LOG_ERROR);
         _exit(1);
     }
-    childPids[0] = pids[0];  // Store for signal handler
+    childPids[0] = pids[0];  
     sleep(1);
     
     pids[3] = fork();
@@ -277,7 +267,7 @@ int main(int argc, char* argv[]) {
         logSystemMessage("Failed to exec CommunicationSystem: " + std::string(strerror(errno)), LOG_ERROR);
         _exit(1);
     }
-    childPids[3] = pids[3];  // Store for signal handler
+    childPids[3] = pids[3];  
     
     // Allow time for all processes to initialize
     sleep(5);
@@ -299,7 +289,7 @@ int main(int argc, char* argv[]) {
     std::thread monitorThread(monitorSystemStatus);
     monitorThread.detach();
 
-    // Use sigaction for more robust signal handling
+    // Use sigaction for signal handling
     struct sigaction sa;
     sa.sa_handler = handleSig;
     sigemptyset(&sa.sa_mask);
@@ -350,9 +340,9 @@ int main(int argc, char* argv[]) {
     }
     
     // Wait for processes to terminate
-    sleep(5);  // Give more time for cleanup
+    sleep(5); 
     
-    // Clean up shared memory - DO NOT ACCESS POINTERS AFTER UNLINK
+    // Clean up shared memory
     logSystemMessage("Cleaning up shared memory");
     
     shm_unlink(SHM_RADAR_DATA);

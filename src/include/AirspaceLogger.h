@@ -12,6 +12,7 @@
 class AirspaceLogger {
     private:
         std::string logPath;
+        pid_t pid;
         int chid;
         
         void logAirspaceState(const std::vector<Position>& positions,

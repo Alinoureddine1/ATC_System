@@ -15,6 +15,7 @@ class OperatorConsole {
 private:
     std::string commandLogPath;
     int chid;
+    pid_t pid;
 
     static pthread_mutex_t mutex;
     static std::queue<OperatorConsoleResponseMessage> responseQueue;
@@ -24,7 +25,6 @@ private:
     static void* cinRead(void* param);
     static void tokenize(std::vector<std::string>& dest, std::string& str);
     
-    // Initialize channel ID in shared memory
     void registerChannelId();
 
 public:

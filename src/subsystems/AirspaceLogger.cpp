@@ -15,19 +15,19 @@ AirspaceLogger::AirspaceLogger(const std::string &lp)
     logAirspaceLoggerMessage("AirspaceLogger initialized with log path: " + lp);
 }
 
-void AirspaceLogger::registerChannelId()
-{
+void AirspaceLogger::registerChannelId() {
+    pid = getpid(); 
+    
     bool success = accessSharedMemory<ChannelIds>(
         SHM_CHANNELS,
         sizeof(ChannelIds),
         O_RDWR,
         false,
         [this](ChannelIds* channels) {
-
-            // Register channel ID
-            channels->loggerChid = AIRSPACE_LOGGER_CHANNEL_ID;
-            logAirspaceLoggerMessage("Registered channel ID " + std::to_string(chid) + 
-                                   " in shared memory");
+            channels->loggerChid = chid;
+            channels->loggerPid = pid;  
+            logAirspaceLoggerMessage("Registered actual channel ID " + std::to_string(chid) + 
+                                   " with PID " + std::to_string(pid) + " in shared memory");
         }
     );
     
@@ -40,20 +40,16 @@ void AirspaceLogger::logAirspaceState(const std::vector<Position> &positions,
                                     const std::vector<Velocity> &velocities,
                                     double timestamp)
 {
-    // Ensure directory exists
     ensureLogDirectories();
 
-    // Open log file
     FILE *fp = fopen(logPath.c_str(), "a");
     if (!fp) {
         logAirspaceLoggerMessage("Cannot open log file: " + logPath, LOG_ERROR);
         return;
     }
     
-    // Write timestamp
     fprintf(fp, "%s Logging at t=%.1f\n", printTimeStamp().c_str(), timestamp);
     
-    // Log each plane's position and velocity
     for (size_t i = 0; i < positions.size(); i++) {
         fprintf(fp, " Plane %d => (%.1f,%.1f,%.1f) / vel(%.1f,%.1f,%.1f)\n",
                 positions[i].planeId,
@@ -61,7 +57,6 @@ void AirspaceLogger::logAirspaceState(const std::vector<Position> &positions,
                 velocities[i].vx, velocities[i].vy, velocities[i].vz);
     }
     
-    // Add a separator
     fprintf(fp, "------------------------\n");
     fclose(fp);
     
@@ -70,11 +65,9 @@ void AirspaceLogger::logAirspaceState(const std::vector<Position> &positions,
 }
 
 void AirspaceLogger::run() {
-    // Ensure log directory exists
     ensureLogDirectories();
     
-    // Create a channel for receiving messages
-    chid = ChannelCreate(3);
+    chid = ChannelCreate(0);
     if (chid == -1) {
         logAirspaceLoggerMessage("ChannelCreate failed: " + 
                                std::string(strerror(errno)), LOG_ERROR);
@@ -83,25 +76,44 @@ void AirspaceLogger::run() {
     
     logAirspaceLoggerMessage("Channel created with ID: " + std::to_string(chid));
     
-    // Register our channel ID in shared memory
     registerChannelId();
 
-    // Main message processing loop
     AirspaceLogMessage msg;
+    
     while (true) {
+        memset(&msg, 0, sizeof(msg));
+        
         int rcvid = MsgReceive(chid, &msg, sizeof(msg), nullptr);
         if (rcvid == -1) {
             logAirspaceLoggerMessage("MsgReceive failed: " + 
                                    std::string(strerror(errno)), LOG_ERROR);
+            sleep(1);  
             continue;
         }
         
-        // Process the message
+        logAirspaceLoggerMessage("Received message with command type: " + 
+                               std::to_string(msg.commandType), LOG_DEBUG);
+        
         if (msg.commandType == COMMAND_LOG_AIRSPACE) {
+            MsgReply(rcvid, EOK, nullptr, 0);
+            
             logAirspaceLoggerMessage("Received airspace log request for timestamp " + 
                                    std::to_string(msg.timestamp));
-            logAirspaceState(msg.positions, msg.velocities, msg.timestamp);
-            MsgReply(rcvid, EOK, nullptr, 0);
+            
+            if (msg.numPlanes > 0 && msg.numPlanes <= MAX_PLANES) {
+                std::vector<Position> positions;
+                std::vector<Velocity> velocities;
+                
+                for (int i = 0; i < msg.numPlanes; i++) {
+                    positions.push_back(msg.positions[i]);
+                    velocities.push_back(msg.velocities[i]);
+                }
+                
+                logAirspaceState(positions, velocities, msg.timestamp);
+            } else {
+                logAirspaceLoggerMessage("Received invalid plane count: " + 
+                                      std::to_string(msg.numPlanes), LOG_WARNING);
+            }
         } else if (msg.commandType == COMMAND_EXIT_THREAD) {
             logAirspaceLoggerMessage("Received exit command");
             MsgReply(rcvid, EOK, nullptr, 0);
@@ -113,7 +125,6 @@ void AirspaceLogger::run() {
         }
     }
     
-    // Clean up
     ChannelDestroy(chid);
     logAirspaceLoggerMessage("AirspaceLogger shutdown complete");
 }

@@ -33,19 +33,16 @@ static inline void setLogLevel(LogLevel level) {
     currentLogLevel = level;
 }
 
-/** Convert bool->string **/
 static inline std::string boolToString(bool value) {
     return value ? "true" : "false";
 }
 
-/** Check if within airspace bounds **/
 static inline bool isPositionWithinBounds(double x, double y, double z) {
     return (x >= AIRSPACE_X_MIN && x <= AIRSPACE_X_MAX &&
             y >= AIRSPACE_Y_MIN && y <= AIRSPACE_Y_MAX &&
             z >= AIRSPACE_Z_MIN && z <= AIRSPACE_Z_MAX);
 }
 
-/** Print a timestamp for logging **/
 static inline std::string printTimeStamp() {
     time_t now = time(nullptr);
     char buf[20];
@@ -53,7 +50,6 @@ static inline std::string printTimeStamp() {
     return std::string(buf);
 }
 
-/** Ensure log directories exist **/
 static inline void ensureLogDirectories() {
     static std::once_flag dirFlag;
     std::call_once(dirFlag, []() {
@@ -62,12 +58,10 @@ static inline void ensureLogDirectories() {
     });
 }
 
-/** Enhanced logging function with log levels **/
 static inline void logMessage(const std::string& subsystem, 
                             const std::string& message,
                             const std::string& logPath, 
                             LogLevel level = LOG_INFO) {
-    // Skip if message level is below current log level
     if (level < currentLogLevel) return;
     
     static std::mutex logMutex;
@@ -83,23 +77,19 @@ static inline void logMessage(const std::string& subsystem,
     
     std::string timestampedMsg = printTimeStamp() + " [" + subsystem + "] [" + levelStr + "] " + message;
     
-    // Console output based on log level
     if (level >= LOG_WARNING) {
         std::cerr << timestampedMsg << std::endl;
     } else {
         std::cout << timestampedMsg << std::endl;
     }
     
-    // Ensure log directory exists
     ensureLogDirectories();
     
-    // Log to file
     FILE* fp = fopen(logPath.c_str(), "a");
     if (fp) {
         fprintf(fp, "%s\n", timestampedMsg.c_str());
         fclose(fp);
     } else {
-        // Only print this error to console to avoid recursive logging issues
         std::cerr << "Failed to open log file: " << logPath << std::endl;
     }
 }

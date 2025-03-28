@@ -29,12 +29,11 @@ bool accessSharedMemory(const std::string& name,
                         int flags,
                         bool createIfMissing,
                         std::function<void(T*)> processor,
-                        int maxRetries = 5) {  // Increased default retries
+                        int maxRetries = 5) {  
     std::string subsystem = "SharedMemory";
     std::lock_guard<std::mutex> lock(shm_mutex);
 
     
-    // Ensure log directory exists
     ensureLogDirectories();
     
     for (int retry = 0; retry < maxRetries; retry++) {
@@ -53,13 +52,12 @@ bool accessSharedMemory(const std::string& name,
                            std::to_string(maxRetries) + ")", LOG_WARNING);
             
             if (retry < maxRetries - 1) {
-                usleep(500000); // 500ms before retry - increased delay
+                usleep(500000); 
                 continue;
             }
             return false;
         }
         
-        // Set size if creating or writing
         if ((flags & O_RDWR) && createIfMissing) {
             if (ftruncate(shm_fd, size) == -1) {
                 logSystemMessage("Failed to set size of shared memory " + name + 
@@ -69,7 +67,6 @@ bool accessSharedMemory(const std::string& name,
             }
         }
         
-        // Map the memory
         int prot = (flags & O_RDWR) ? (PROT_READ | PROT_WRITE) : PROT_READ;
         T* ptr = static_cast<T*>(mmap(nullptr, size, prot, MAP_SHARED, shm_fd, 0));
         
@@ -79,14 +76,13 @@ bool accessSharedMemory(const std::string& name,
             close(shm_fd);
             
             if (retry < maxRetries - 1) {
-                usleep(500000); // 500ms before retry - increased delay
+                usleep(500000); 
                 continue;
             }
             return false;
         }
         
         try {
-            // Process the mapped memory
             processor(ptr);
         } catch (const std::exception& e) {
             logSystemMessage("Exception while processing shared memory " + name + 

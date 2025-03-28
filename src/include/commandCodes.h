@@ -66,6 +66,7 @@ enum OperatorConsoleSystemCommand {
     OPCON_CONSOLE_COMMAND_ALERT = 2
 };
 
+// OperatorConsole user commands
 enum OperatorConsoleUserCommand {
     OPCON_USER_COMMAND_NO_COMMAND_AVAILABLE = 0,
     OPCON_USER_COMMAND_DISPLAY_PLANE_INFO   = 1,
@@ -76,9 +77,13 @@ enum OperatorConsoleUserCommand {
 // Structure to share channel IDs between processes
 struct ChannelIds {
     int operatorChid;
+    pid_t operatorPid;  
     int displayChid;
+    pid_t displayPid;   
     int loggerChid;
+    pid_t loggerPid;    
     int computerChid;
+    pid_t computerPid;  
 };
 
 // Data structures
@@ -131,16 +136,17 @@ struct PlanePositionResponse {
 
 struct AirspaceLogMessage {
     int commandType;
-    std::vector<Position> positions;
-    std::vector<Velocity> velocities;
+    int numPlanes;
     double timestamp;
+    Position positions[MAX_PLANES];
+    Velocity velocities[MAX_PLANES];
 };
 
 struct multipleAircraftDisplay {
     size_t numberOfAircrafts;
-    int* planeIDArray;
-    Vec3* positionArray;
-    Vec3* velocityArray;
+    int planeIDArray[MAX_PLANES];      
+    Vec3 positionArray[MAX_PLANES];    
+    Vec3 velocityArray[MAX_PLANES];    
 };
 
 struct dataDisplayCommandMessage {
@@ -151,7 +157,7 @@ struct dataDisplayCommandMessage {
             Vec3 position;
             Vec3 velocity;
         } one;
-        multipleAircraftDisplay multiple;
+        multipleAircraftDisplay multiple; 
     } commandBody;
 };
 

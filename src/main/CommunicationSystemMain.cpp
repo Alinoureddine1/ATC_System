@@ -3,27 +3,23 @@
 #include <iostream>
 #include <signal.h>
 #include <thread>
-#include <unistd.h> // For sleep function
+#include <unistd.h>
 
 /**
  * CommunicationSystem reads /shm_commands in a loop, sending commands to planes.
  */
 
-// Signal handler for clean shutdown
 static volatile sig_atomic_t running = 1;
 static void handleSig(int) { running = 0; }
 
 int main() {
-    // Set up signal handler for graceful termination
     signal(SIGINT, handleSig);
     signal(SIGTERM, handleSig);
     
     logCommunicationSystemMessage("Subsystem starting");
     
-    // Create the CommunicationSystem
     CommunicationSystem comm;
     
-    // Start the communication system in a detached thread so we can handle signals
     std::thread commThread([&comm]() {
         try {
             comm.run(); // infinite loop reading commands
@@ -33,9 +29,8 @@ int main() {
         }
     });
     
-    // Wait for termination signal
     while (running) {
-        sleep(1); // Use sleep(1) instead of pause() for better portability
+        sleep(1); 
     }
     
     logCommunicationSystemMessage("Shutdown signal received", LOG_WARNING);

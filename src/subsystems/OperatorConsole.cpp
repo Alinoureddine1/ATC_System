@@ -25,32 +25,32 @@ int OperatorConsole::getChid() const
     return chid;
 }
 
-void OperatorConsole::registerChannelId()
-{
+void OperatorConsole::registerChannelId() {
+    pid = getpid(); 
+    
     bool success = accessSharedMemory<ChannelIds>(
         SHM_CHANNELS,
         sizeof(ChannelIds),
         O_RDWR,
         false,
-        [this](ChannelIds *channels)
-        {
-            // Register channel ID
-            channels->operatorChid = OPERATOR_CONSOLE_CHANNEL_ID;
-            logOperatorConsoleMessage("Registered channel ID " + std::to_string(chid) + " in shared memory");
-        });
-
-    if (!success)
-    {
+        [this](ChannelIds* channels) {
+            channels->operatorChid = chid;
+            channels->operatorPid = pid;  
+            logOperatorConsoleMessage("Registered actual channel ID " + std::to_string(chid) + 
+                                   " with PID " + std::to_string(pid) + " in shared memory");
+        }
+    );
+    
+    if (!success) {
         logOperatorConsoleMessage("Failed to register channel ID in shared memory", LOG_ERROR);
     }
 }
 
 void OperatorConsole::run()
 {
-    // Ensure log directory exists
     ensureLogDirectories();
 
-    chid = ChannelCreate(OPERATOR_CONSOLE_CHANNEL_ID);
+    chid = ChannelCreate(0);
     
     if (chid == -1)
     {
@@ -62,18 +62,14 @@ void OperatorConsole::run()
 
     registerChannelId();
 
-    // Start thread to read from stdin
     pthread_t thr;
     std::atomic_bool stop(false);
     pthread_create(&thr, nullptr, &OperatorConsole::cinRead, &stop);
 
-    // Display the menu options
     displayMenu();
 
-    // Listen for messages
     listen();
 
-    // Clean up
     stop = true;
     pthread_join(thr, nullptr);
     ChannelDestroy(chid);
@@ -356,7 +352,6 @@ void OperatorConsole::displayMenu()
 
 bool OperatorConsole::processInput()
 {
-    // Not used in this implementation
     return false;
 }
 

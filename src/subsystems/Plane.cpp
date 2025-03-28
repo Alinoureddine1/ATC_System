@@ -12,7 +12,6 @@ Plane::Plane(int pid, double px, double py, double pz,
       lastUpdateTime(0.0),
       running(false)
 {
-    // Check if initial position is within bounds
     if (!isPositionWithinBounds(x, y, z)) {
         logPlaneMessage(id, "Started out-of-bounds, clamping to boundaries", LOG_WARNING);
         
@@ -68,10 +67,8 @@ void Plane::runPlaneProcess(double startTime) {
     logPlaneMessage(id, "Plane process running, starting at time " + std::to_string(startTime));
     
     while (running) {
-        // Update position at 1Hz
         updatePosition(lastUpdateTime + 1.0);
         
-        // Simulate 1 second passing
         usleep(1000000); // 1 second
     }
 }

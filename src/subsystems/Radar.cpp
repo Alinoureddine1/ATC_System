@@ -14,7 +14,6 @@ Radar::Radar() {
 }
 
 Radar::~Radar() {
-    // Only stop tracking planes, don't destroy them as we don't own them
     std::lock_guard<std::mutex> lock(planesMutex);
     for (Plane* plane : trackedPlanes) {
         plane->stop();
@@ -31,7 +30,6 @@ void Radar::detectAircraft(std::vector<Plane*>& planes, double currentTime) {
     
     for (Plane* p : planes) {
         trackedPlanes.push_back(p);
-        // Start the plane's thread if it's newly added
         p->start(currentTime);
         
         logRadarMessage("Added plane " + std::to_string(p->getId()) + 
@@ -45,7 +43,6 @@ void Radar::detectAircraft(std::vector<Plane*>& planes, double currentTime) {
 void Radar::addPlane(Plane* plane, double currentTime) {
     std::lock_guard<std::mutex> lock(planesMutex);
     
-    // Check if plane already exists
     auto it = std::find_if(trackedPlanes.begin(), trackedPlanes.end(), 
                           [plane](Plane* p) { return p->getId() == plane->getId(); });
     
@@ -72,7 +69,6 @@ void Radar::removePlane(int planeId) {
                           [planeId](Plane* p) { return p->getId() == planeId; });
     
     if (it != trackedPlanes.end()) {
-        // No need to stop the thread here, as we don't control the plane object lifecycle
         trackedPlanes.erase(it);
         logRadarMessage("Stopped tracking plane " + std::to_string(planeId));
     } else {
@@ -84,11 +80,9 @@ void Radar::removePlane(int planeId) {
 void Radar::update(double currentTime) {
     std::lock_guard<std::mutex> lock(planesMutex);
     
-    // Remove planes that are out of bounds
-    for (size_t i = 0; i < trackedPlanes.size(); /* no increment here */) {
+    for (size_t i = 0; i < trackedPlanes.size();) {
         Plane* plane = trackedPlanes[i];
         
-        // Check if plane has left airspace
         if (!isPositionWithinBounds(plane->getX(), plane->getY(), plane->getZ())) {
             logRadarMessage("Plane " + std::to_string(plane->getId()) + 
                          " has left the airspace", LOG_WARNING);
@@ -98,7 +92,6 @@ void Radar::update(double currentTime) {
         }
     }
 
-    // Update shared memory with current plane states
     RadarData data;
     data.numPlanes = (int)std::min(trackedPlanes.size(), (size_t)MAX_PLANES);
     
@@ -116,7 +109,7 @@ void Radar::update(double currentTime) {
         SHM_RADAR_DATA,
         sizeof(RadarData),
         O_RDWR,
-        true, // Create if missing
+        true,
         [&data](RadarData* rd) {
             // Copy the data
             memcpy(rd, &data, sizeof(RadarData));

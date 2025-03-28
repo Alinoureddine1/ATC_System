@@ -48,21 +48,19 @@ void CommunicationSystem::run() {
             O_RDWR, 
             false,
             [this](CommandQueue* cq) {
-                // Check if there's a command to process
                 if (cq->head != cq->tail) {
                     Command cmd = cq->commands[cq->head];
                     cq->head = (cq->head + 1) % MAX_COMMANDS;
                     send(cmd.planeId, cmd);
                 } else {
-                    // Don't process too quickly if no commands
-                    usleep(100000); // 100ms
+                    usleep(100000); 
                 }
             }
         );
         
         if (!success) {
             logCommunicationSystemMessage("Failed to access command queue, retrying...", LOG_WARNING);
-            sleep(1); // Wait before retry
+            sleep(1);
         }
     }
 }

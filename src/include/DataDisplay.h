@@ -12,13 +12,13 @@
 class DataDisplay {
     private:
         int chid;
+        pid_t pid;
         int fd;
         std::string logPath;
     
         void receiveMessage();
         std::string generateGrid(const multipleAircraftDisplay& airspaceInfo);
     
-        // Initialize channel ID in shared memory
         void registerChannelId();
     
     public:

@@ -15,7 +15,6 @@ private:
     double vx, vy, vz;
     double lastUpdateTime;
     
-    // Thread safety and threading support
     mutable std::mutex positionMutex;
     std::atomic<bool> running;
     std::thread planeThread;
@@ -31,10 +30,8 @@ public:
     void start(double startTime);
     void stop();
 
-    // Thread-safe getters
     int    getId() const   { return id; }
     
-    // These getters need mutex protection
     double getX() const;
     double getY() const;   
     double getZ() const;   
@@ -42,7 +39,6 @@ public:
     double getVy() const;  
     double getVz() const;  
 
-    // Thread-safe position and velocity updates
     void setVelocity(double vx, double vy, double vz);
     void setPosition(double x, double y, double z);
 };

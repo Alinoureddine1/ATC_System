@@ -12,17 +12,6 @@
 #include "utils.h"
 #include "shm_utils.h"
 
-/**
- * The ComputerSystem sets up multiple periodic tasks:
- *   1) violationCheck() every 1s
- *   2) opConCheck() every 1s
- *   3) logSystem(false) every 5s  (to DataDisplay)
- *   4) logSystem(true) every 20s  (to DataDisplay, but with COMMAND_LOG)
- *   5) LOG_AIRSPACE_TO_LOGGER_TIMER every 20s to send a message to AirspaceLogger
- *
- * We read plane data from /shm_radar_data each time we do violationCheck() or logging.
- * If OperatorConsole sets plane velocities, we queue them in /shm_commands for CommunicationSystem.
- */
 
  ComputerSystem::ComputerSystem(double predTime)
  : chid(-1), 
@@ -41,11 +30,14 @@
                         std::to_string(predTime) + "s");
 }
 
+
+
+
 bool ComputerSystem::initializeChannelIds()
 {
     logComputerSystemMessage("Initializing channel IDs");
     int retries = 0;
-    const int MAX_RETRIES = 30;  // 30 for now to avoid infinite loop
+    const int MAX_RETRIES = 30;
     bool initialized = false;
 
     while (retries < MAX_RETRIES && !initialized)
@@ -53,32 +45,33 @@ bool ComputerSystem::initializeChannelIds()
         bool success = accessSharedMemory<ChannelIds>(
             SHM_CHANNELS,
             sizeof(ChannelIds),
-            O_RDWR,
+            O_RDONLY,
             false, 
             [this, &initialized](ChannelIds* channels) {
-                // Check that all channel IDs are initialized and unique
                 if (channels->operatorChid > 0 &&
                     channels->displayChid > 0 &&
-                    channels->loggerChid > 0 &&
-                    channels->operatorChid != channels->displayChid &&
-                    channels->operatorChid != channels->loggerChid &&
-                    channels->displayChid != channels->loggerChid)
+                    channels->loggerChid > 0)
                 {
-                    operatorChid = OPERATOR_CONSOLE_CHANNEL_ID;
-                    displayChid = DATA_DISPLAY_CHANNEL_ID;
-                    loggerChid = AIRSPACE_LOGGER_CHANNEL_ID;
-
-                    channels->computerChid = COMPUTER_SYSTEM_CHANNEL_ID;
+                    operatorChid = channels->operatorChid;
+                    operatorPid = channels->operatorPid;  
+                    displayChid = channels->displayChid;
+                    displayPid = channels->displayPid;    
+                    loggerChid = channels->loggerChid;
+                    loggerPid = channels->loggerPid;      
+                    
                     initialized = true;
                     
                     logComputerSystemMessage("Successfully initialized channel IDs: " +
-                                           std::string("operator=") + std::to_string(operatorChid) + ", " +
-                                           std::string("display=") + std::to_string(displayChid) + ", " +
-                                           std::string("logger=") + std::to_string(loggerChid));
+                                           std::string("operator=") + std::to_string(operatorChid) + 
+                                           ":" + std::to_string(operatorPid) + ", " +
+                                           std::string("display=") + std::to_string(displayChid) + 
+                                           ":" + std::to_string(displayPid) + ", " +
+                                           std::string("logger=") + std::to_string(loggerChid) + 
+                                           ":" + std::to_string(loggerPid));
                 }
                 else
                 {
-                    logComputerSystemMessage("Waiting for unique subsystem IDs..." + 
+                    logComputerSystemMessage("Waiting for subsystem IDs..." + 
                                            std::string(" operator=") + std::to_string(channels->operatorChid) + 
                                            std::string(" display=") + std::to_string(channels->displayChid) + 
                                            std::string(" logger=") + std::to_string(channels->loggerChid), LOG_INFO);
@@ -101,14 +94,37 @@ bool ComputerSystem::initializeChannelIds()
     return initialized;
 }
 
+void ComputerSystem::registerChannelId()
+{
+    bool success = accessSharedMemory<ChannelIds>(
+        SHM_CHANNELS,
+        sizeof(ChannelIds),
+        O_RDWR,
+        false,
+        [this](ChannelIds* channels) {
+            channels->computerChid = chid;
+            channels->computerPid = getpid();  
+            logComputerSystemMessage("Registered computer system channel ID " + 
+                                   std::to_string(chid) + " with PID " +
+                                   std::to_string(getpid()) + " in shared memory");
+        }
+    );
+    
+    if (!success) {
+        logComputerSystemMessage("Failed to register channel ID in shared memory", LOG_ERROR);
+    }
+}
+
 void ComputerSystem::run() {
-    chid = ChannelCreate(COMPUTER_SYSTEM_CHANNEL_ID);
+    chid = ChannelCreate(0);
     if (chid == -1) {
         logComputerSystemMessage("ChannelCreate failed: " + std::string(strerror(errno)), LOG_ERROR);
         return;
     }
 
     logComputerSystemMessage("Channel created with ID: " + std::to_string(chid));
+    
+    registerChannelId();
     
     if (!initializeChannelIds()) {
         logComputerSystemMessage("Failed to initialize channel IDs", LOG_ERROR);
@@ -117,7 +133,6 @@ void ComputerSystem::run() {
     
     logComputerSystemMessage("All channel IDs initialized. Ready to create periodic tasks.");
     
-    // Start emergency event processing thread
     std::thread eventThread(&ComputerSystem::processEmergencyEvents, this);
     eventThread.detach();
     
@@ -148,7 +163,6 @@ void ComputerSystem::createPeriodicTasks()
         return;
     }
 
-    // For each periodic task, create a timer
     for (int i = 0; i < nTasks; i++)
     {
         struct sigevent sev;
@@ -162,7 +176,6 @@ void ComputerSystem::createPeriodicTasks()
             continue;
         }
         
-        // Set intervals
         struct itimerspec its;
         its.it_value.tv_sec = tasks[i].interval;
         its.it_value.tv_nsec = 0;
@@ -199,12 +212,10 @@ void ComputerSystem::listen()
         rcvid = MsgReceive(chid, &msg, sizeof(msg), NULL);
         if (rcvid == 0)
         {
-            // Pulse received
             handlePulse(msg.hdr.code, currentTime);
         }
         else if (rcvid > 0)
         {
-            // Message received
             switch (msg.command)
             {
             case COMMAND_EXIT_THREAD:
@@ -273,8 +284,7 @@ void ComputerSystem::handlePulse(int code, double &currentTime)
 
 void ComputerSystem::sendLogToAirspaceLogger(double currentTime)
 {
-    // If logger channel not initialized, try to get it from shared memory
-    if (loggerChid == -1)
+    if (loggerChid == -1 || loggerPid == -1)
     {
         bool success = accessSharedMemory<ChannelIds>(
             SHM_CHANNELS,
@@ -283,17 +293,18 @@ void ComputerSystem::sendLogToAirspaceLogger(double currentTime)
             false,
             [this](ChannelIds* channels) {
                 loggerChid = channels->loggerChid;
+                loggerPid = channels->loggerPid;
             }
         );
 
-        if (!success || loggerChid == -1)
+        if (!success || loggerChid == -1 || loggerPid == -1)
         {
             logComputerSystemMessage("AirspaceLogger not ready yet, skipping log", LOG_WARNING);
             return;
         }
     }
 
-    int coid = ConnectAttach(0, 0, loggerChid, _NTO_SIDE_CHANNEL, 0);
+    int coid = ConnectAttach(0, loggerPid, loggerChid, _NTO_SIDE_CHANNEL, 0);
     if (coid == -1)
     {
         logComputerSystemMessage("Failed to connect to AirspaceLogger: " + 
@@ -304,18 +315,18 @@ void ComputerSystem::sendLogToAirspaceLogger(double currentTime)
     AirspaceLogMessage logMsg;
     logMsg.commandType = COMMAND_LOG_AIRSPACE;
     logMsg.timestamp = currentTime;
+    logMsg.numPlanes = 0;
 
-    // Get radar data
     bool success = accessSharedMemory<RadarData>(
         SHM_RADAR_DATA,
         sizeof(RadarData),
         O_RDONLY,
         false,
         [&logMsg](RadarData* rd) {
-            for (int i = 0; i < rd->numPlanes; i++)
-            {
-                logMsg.positions.push_back(rd->positions[i]);
-                logMsg.velocities.push_back(rd->velocities[i]);
+            logMsg.numPlanes = (rd->numPlanes > MAX_PLANES) ? MAX_PLANES : rd->numPlanes;
+            for (int i = 0; i < logMsg.numPlanes; i++) {
+                logMsg.positions[i] = rd->positions[i];
+                logMsg.velocities[i] = rd->velocities[i];
             }
         }
     );
@@ -329,7 +340,8 @@ void ComputerSystem::sendLogToAirspaceLogger(double currentTime)
         }
         else
         {
-            logComputerSystemMessage("Sent airspace log to AirspaceLogger");
+            logComputerSystemMessage("Sent airspace log to AirspaceLogger with " + 
+                                   std::to_string(logMsg.numPlanes) + " planes");
         }
     }
     
@@ -370,7 +382,6 @@ bool ComputerSystem::checkSeparation(const Position &p1, const Position &p2) con
     
     double horizontalSep = sqrt(dx * dx + dy * dy);
     
-    // True if they are safely separated
     return (dz >= MIN_VERTICAL_SEPARATION || 
             horizontalSep >= MIN_HORIZONTAL_SEPARATION);
 }
@@ -397,14 +408,12 @@ bool ComputerSystem::predictSeparation(const Position &pos1, const Velocity &vel
 
 void ComputerSystem::violationCheck()
 {
-    // Read current radar data
     bool success = accessSharedMemory<RadarData>(
         SHM_RADAR_DATA,
         sizeof(RadarData),
         O_RDONLY,
         false,
         [this](RadarData* rd) {
-            // Update our snapshots
             positionsSnapshot.clear();
             velocitiesSnapshot.clear();
             
@@ -420,7 +429,6 @@ void ComputerSystem::violationCheck()
         return;
     }
 
-    // Check each pair of planes for potential violations
     int n = static_cast<int>(positionsSnapshot.size());
     for (int i = 0; i < n; i++)
     {
@@ -439,10 +447,8 @@ void ComputerSystem::checkForFutureViolation(const Position &pos1, const Velocit
                                            const Position &pos2, const Velocity &vel2,
                                            int plane1, int plane2)
 {
-    // Calculate time to closest approach
     double timeToClosestApproach = calculateTimeToMinimumDistance(pos1, vel1, pos2, vel2);
 
-    // If closest approach is within our prediction window
     if (timeToClosestApproach <= congestionDegreeSeconds)
     {
         // Calculate positions at closest approach
@@ -462,8 +468,7 @@ void ComputerSystem::checkForFutureViolation(const Position &pos1, const Velocit
         // Check if they violate separation
         if (dz < MIN_VERTICAL_SEPARATION && horizontalSeparation < MIN_HORIZONTAL_SEPARATION)
         {
-            // Alert the operator console
-            int coid = ConnectAttach(0, 0, operatorChid, _NTO_SIDE_CHANNEL, 0);
+            int coid = ConnectAttach(0, operatorPid, operatorChid, _NTO_SIDE_CHANNEL, 0);
             if (coid != -1)
             {
                 OperatorConsoleCommandMessage alert;
@@ -491,8 +496,7 @@ void ComputerSystem::checkForFutureViolation(const Position &pos1, const Velocit
 
 void ComputerSystem::opConCheck()
 {
-    // Ask OperatorConsole for the top user command
-    int coid = ConnectAttach(0, 0, operatorChid, _NTO_SIDE_CHANNEL, 0);
+    int coid = ConnectAttach(0, operatorPid, operatorChid, _NTO_SIDE_CHANNEL, 0);
     if (coid == -1) {
         logComputerSystemMessage("Failed to connect to OperatorConsole: " + 
                                std::string(strerror(errno)), LOG_ERROR);
@@ -512,11 +516,9 @@ void ComputerSystem::opConCheck()
     }
     ConnectDetach(coid);
 
-    // Process the response from OperatorConsole
     switch (rcvMsg.userCommandType)
     {
     case OPCON_USER_COMMAND_NO_COMMAND_AVAILABLE:
-        // No command to process
         break;
         
     case OPCON_USER_COMMAND_DISPLAY_PLANE_INFO:
@@ -573,42 +575,27 @@ void ComputerSystem::logSystem(bool toFile) {
         return;
     }
     
-    // Safer message creation for DataDisplay
     dataDisplayCommandMessage msg;
+    memset(&msg, 0, sizeof(msg));
+    
     msg.commandType = (toFile) ? COMMAND_LOG : COMMAND_GRID;
     
     size_t n = ids.size();
-    
-    // Allocate memory for arrays that will be sent in the message
-    int* planeIDArray = new (std::nothrow) int[n];
-    Vec3* positionArray = new (std::nothrow) Vec3[n];
-    Vec3* velocityArray = new (std::nothrow) Vec3[n];
-    
-    if (!planeIDArray || !positionArray || !velocityArray) {
-        logComputerSystemMessage("Failed to allocate memory for display data", LOG_ERROR);
-        
-        // Clean up any allocated memory
-        if (planeIDArray) delete[] planeIDArray;
-        if (positionArray) delete[] positionArray;
-        if (velocityArray) delete[] velocityArray;
-        
-        return;
-    }
-    
-    // Copy data to arrays
-    for (size_t i = 0; i < n; i++) {
-        planeIDArray[i] = ids[i];
-        positionArray[i] = poss[i];
-        velocityArray[i] = vels[i];
+    if (n > MAX_PLANES) {
+        logComputerSystemMessage("Too many planes for message, truncating to " + 
+                               std::to_string(MAX_PLANES), LOG_WARNING);
+        n = MAX_PLANES;
     }
     
     msg.commandBody.multiple.numberOfAircrafts = n;
-    msg.commandBody.multiple.planeIDArray = planeIDArray;
-    msg.commandBody.multiple.positionArray = positionArray;
-    msg.commandBody.multiple.velocityArray = velocityArray;
     
-    // Send message to DataDisplay
-    int coid = ConnectAttach(0, 0, displayChid, _NTO_SIDE_CHANNEL, 0);
+    for (size_t i = 0; i < n; i++) {
+        msg.commandBody.multiple.planeIDArray[i] = ids[i];
+        msg.commandBody.multiple.positionArray[i] = poss[i];
+        msg.commandBody.multiple.velocityArray[i] = vels[i];
+    }
+    
+    int coid = ConnectAttach(0, displayPid, displayChid, _NTO_SIDE_CHANNEL, 0);
     if (coid != -1) {
         if (MsgSend(coid, &msg, sizeof(msg), NULL, 0) == -1) {
             logComputerSystemMessage("Failed to send log data to DataDisplay: " + 
@@ -622,25 +609,18 @@ void ComputerSystem::logSystem(bool toFile) {
         logComputerSystemMessage("Failed to connect to DataDisplay: " + 
                                std::string(strerror(errno)), LOG_ERROR);
     }
-    
-    // Clean up allocated memory
-    delete[] planeIDArray;
-    delete[] positionArray;
-    delete[] velocityArray;
 }
 
 void ComputerSystem::processEmergencyEvents() {
     logComputerSystemMessage("Emergency event processing thread started");
     
     while (true) {
-        // Use a mutex and condition variable to wait for emergency events
         std::unique_lock<std::mutex> lock(eventMutex);
         eventCV.wait_for(lock, std::chrono::milliseconds(100), [this]{ return emergencyEvent; });
         
         if (emergencyEvent) {
             emergencyEvent = false;
             
-            // Process immediate safety concerns
             violationCheck();
             
             // Signal operator console about emergency
@@ -648,7 +628,7 @@ void ComputerSystem::processEmergencyEvents() {
             if (coid != -1) {
                 OperatorConsoleCommandMessage alert;
                 alert.systemCommandType = OPCON_CONSOLE_COMMAND_ALERT;
-                alert.plane1 = -1; // Special value to indicate system-wide emergency
+                alert.plane1 = -1; 
                 alert.plane2 = -1;
                 alert.collisionTimeSeconds = 0; // Immediate
                 OperatorConsoleResponseMessage r;
@@ -677,29 +657,31 @@ void ComputerSystem::triggerEmergencyEvent() {
 
 void ComputerSystem::sendDisplayCommand(int planeNumber)
 {
-    // Find the plane in radar data
+    struct {
+        dataDisplayCommandMessage msg;
+    } stackMsg;
+    
+    memset(&stackMsg, 0, sizeof(stackMsg));
+    
     bool found = false;
-    dataDisplayCommandMessage msg;
-    msg.commandType = COMMAND_ONE_PLANE;
-    msg.commandBody.one.aircraftID = planeNumber;
-    msg.commandBody.one.position = {0, 0, 0};
-    msg.commandBody.one.velocity = {0, 0, 0};
-
+    stackMsg.msg.commandType = COMMAND_ONE_PLANE;
+    stackMsg.msg.commandBody.one.aircraftID = planeNumber;
+    
     bool success = accessSharedMemory<RadarData>(
         SHM_RADAR_DATA,
         sizeof(RadarData),
         O_RDONLY,
         false,
-        [&found, &msg, planeNumber](RadarData* rd) {
+        [&found, &stackMsg, planeNumber](RadarData* rd) {
             for (int i = 0; i < rd->numPlanes; i++) {
                 if (rd->positions[i].planeId == planeNumber) {
                     found = true;
-                    msg.commandBody.one.position = {
+                    stackMsg.msg.commandBody.one.position = {
                         rd->positions[i].x, 
                         rd->positions[i].y, 
                         rd->positions[i].z
                     };
-                    msg.commandBody.one.velocity = {
+                    stackMsg.msg.commandBody.one.velocity = {
                         rd->velocities[i].vx, 
                         rd->velocities[i].vy, 
                         rd->velocities[i].vz
@@ -715,10 +697,10 @@ void ComputerSystem::sendDisplayCommand(int planeNumber)
         return;
     }
 
-    // Send to DataDisplay
-    int coid = ConnectAttach(0, 0, displayChid, _NTO_SIDE_CHANNEL, 0);
+    // Send to DataDisplay with correct PID
+    int coid = ConnectAttach(0, displayPid, displayChid, _NTO_SIDE_CHANNEL, 0);
     if (coid != -1) {
-        if (MsgSend(coid, &msg, sizeof(msg), NULL, 0) == -1) {
+        if (MsgSend(coid, &stackMsg, sizeof(stackMsg), NULL, 0) == -1) {
             logComputerSystemMessage("Failed to send plane info to DataDisplay: " + 
                                    std::string(strerror(errno)), LOG_ERROR);
         } else {
