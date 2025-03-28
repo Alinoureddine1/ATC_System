@@ -1,2 +1,24 @@
-build/x86_64-debug/*
+# IDE-specific files
+.vscode/
+.settings/
+.project
+.cproject
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Build directories
+build/
+bin/
+obj/
+
+# Generated files
 *.o
+*.d
+*.a
+*.so
+*.log
+
+# QNX-specific
+*.use
+*.map

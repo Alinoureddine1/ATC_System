@@ -5,9 +5,6 @@
 #include <thread>
 #include <unistd.h>
 
-/**
- * CommunicationSystem reads /shm_commands in a loop, sending commands to planes.
- */
 
 static volatile sig_atomic_t running = 1;
 static void handleSig(int) { running = 0; }
@@ -22,7 +19,7 @@ int main() {
     
     std::thread commThread([&comm]() {
         try {
-            comm.run(); // infinite loop reading commands
+            comm.run(); 
         } catch (const std::exception& e) {
             logCommunicationSystemMessage("Exception in communication thread: " + 
                                        std::string(e.what()), LOG_ERROR);
