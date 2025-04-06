@@ -83,9 +83,17 @@ void Radar::update(double currentTime) {
     for (size_t i = 0; i < trackedPlanes.size();) {
         Plane* plane = trackedPlanes[i];
         
-        if (!isPositionWithinBounds(plane->getX(), plane->getY(), plane->getZ())) {
-            logRadarMessage("Plane " + std::to_string(plane->getId()) + 
-                         " has left the airspace", LOG_WARNING);
+        bool outsideBounds = !isPositionWithinBounds(plane->getX(), plane->getY(), plane->getZ());
+        bool atBoundary = (
+            (plane->getVx() == 0 && plane->getVy() == 0 && plane->getVz() == 0) && 
+            (plane->getX() == AIRSPACE_X_MIN || plane->getX() == AIRSPACE_X_MAX || 
+             plane->getY() == AIRSPACE_Y_MIN || plane->getY() == AIRSPACE_Y_MAX || 
+             plane->getZ() == AIRSPACE_Z_MIN || plane->getZ() == AIRSPACE_Z_MAX)
+        );
+        
+        if (outsideBounds || atBoundary) {
+            std::string reason = outsideBounds ? "left the airspace" : "reached boundary and stopped";
+            logRadarMessage("Plane " + std::to_string(plane->getId()) + " " + reason, LOG_WARNING);
             trackedPlanes.erase(trackedPlanes.begin() + i);
         } else {
             i++; // Only increment if we didn't remove a plane
@@ -109,9 +117,8 @@ void Radar::update(double currentTime) {
         SHM_RADAR_DATA,
         sizeof(RadarData),
         O_RDWR,
-        true,
+        false,
         [&data](RadarData* rd) {
-            // Copy the data
             memcpy(rd, &data, sizeof(RadarData));
         }
     );

@@ -11,6 +11,9 @@
 #include "utils.h"
 #include "shm_utils.h"
 #include <math.h>
+#include <iomanip> 
+#include <sstream>
+
 
 DataDisplay::DataDisplay(const std::string& logPath)
     : chid(-1), fd(-1), logPath(logPath)
@@ -209,11 +212,21 @@ void DataDisplay::receiveMessage() {
     }
 }
 
+std::string centerText(const std::string &text, int width) {
+    if ((int)text.size() >= width)
+        return text;
+    int totalPadding = width - text.size();
+    int leftPadding = totalPadding / 2;
+    int rightPadding = totalPadding - leftPadding;
+    return std::string(leftPadding, ' ') + text + std::string(rightPadding, ' ');
+}
+
+
 std::string DataDisplay::generateGrid(const multipleAircraftDisplay& airspaceInfo) {
     constexpr int rowSize = 25;
     constexpr int colSize = 25;
     constexpr int cell = 4000;
-
+    constexpr int cellWidth = 5;
     std::string grid[rowSize][colSize];
     
     if (airspaceInfo.numberOfAircrafts > MAX_PLANES) {
@@ -232,29 +245,34 @@ std::string DataDisplay::generateGrid(const multipleAircraftDisplay& airspaceInf
         double px = airspaceInfo.positionArray[i].x;
         double py = airspaceInfo.positionArray[i].y;
         int planeId = airspaceInfo.planeIDArray[i];
-
+        
         // Find cell for this plane
         for (int r = 0; r < rowSize; r++) {
-            double yMin = cell*r, yMax = cell*(r+1);
+            double yMin = cell * r, yMax = cell * (r + 1);
             if (py >= yMin && py < yMax) {
                 for (int c = 0; c < colSize; c++) {
-                    double xMin = cell*c, xMax = cell*(c+1);
+                    double xMin = cell * c, xMax = cell * (c + 1);
                     if (px >= xMin && px < xMax) {
-                        if (!grid[r][c].empty()) grid[r][c] += ",";
-                        grid[r][c] += std::to_string(planeId);
+                        if (!grid[r][c].empty())
+                            grid[r][c] += ",";
+                        std::stringstream ss;
+                        ss << std::setw(2) << std::setfill(' ') << planeId;
+                        grid[r][c] += ss.str();
                     }
                 }
             }
         }
     }
-
-    // Generate the grid as a string
+    
+    // Generate the grid as a string, centering each cell’s content.
     std::stringstream out;
     for (int r = 0; r < rowSize; r++) {
         out << "\n";
         for (int c = 0; c < colSize; c++) {
-            if (grid[r][c].empty()) out << "| ";
-            else out << "|" << grid[r][c];
+            // If cell is empty, use a single space.
+            std::string cellContent = grid[r][c].empty() ? " " : grid[r][c];
+            // Center the cell content in a fixed width.
+            out << "|" << centerText(cellContent, cellWidth);
         }
     }
     out << "\n";
