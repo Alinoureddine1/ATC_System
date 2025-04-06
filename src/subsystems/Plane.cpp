@@ -46,6 +46,11 @@ Plane::~Plane() {
 }
 
 void Plane::start(double startTime) {
+    // Guard against restarting an already running plane.
+    if (running) {
+        logPlaneMessage(id, "Plane already running, start() ignored", LOG_DEBUG);
+        return;
+    }
     running = true;
     planeThread = std::thread(&Plane::runPlaneProcess, this, startTime);
     logPlaneMessage(id, "Plane thread started at time " + std::to_string(startTime));

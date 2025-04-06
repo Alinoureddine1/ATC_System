@@ -85,74 +85,86 @@ std::map<int, std::vector<std::unique_ptr<Plane>>> parseInputFile(const std::str
 }
 
 void runRadarSystem() {
-    std::vector<std::unique_ptr<Plane>> activePlanes;
-    
-    // Add default planes
-    activePlanes.push_back(std::unique_ptr<Plane>(new Plane(1, 10000.0, 20000.0, 5000.0, 100.0, 50.0, 0.0)));
-    activePlanes.push_back(std::unique_ptr<Plane>(new Plane(2, 30000.0, 40000.0, 7000.0, -50.0, 100.0, 0.0)));
-    
     mkdir("/tmp/atc", 0777);
-    
-    // Parse input file (if exists)
+
     std::string inputFilePath = DEFAULT_PLANE_INPUT_PATH;
-    auto timeToPlanes = parseInputFile(inputFilePath);
     
-    // Add any planes that should appear at time 0
+    auto timeToPlanes = parseInputFile(inputFilePath);
+
+    bool usingCustomPlanes = false;
+    for (const auto &kv : timeToPlanes) {
+        if (!kv.second.empty()) {
+            usingCustomPlanes = true;
+            break;
+        }
+    }
+
+    std::vector<std::unique_ptr<Plane>> activePlanes;
+    if (!usingCustomPlanes) {
+        logRadarMessage("No custom plane data found; using default planes");
+        activePlanes.push_back(std::unique_ptr<Plane>(new Plane(
+            1, 10000.0, 20000.0, 5000.0, 100.0, 50.0, 0.0)));
+        activePlanes.push_back(std::unique_ptr<Plane>(new Plane(
+            2, 30000.0, 40000.0, 7000.0, -50.0, 100.0, 0.0)));
+    } else {
+        logRadarMessage("Custom plane file found; skipping default planes");
+    }
+
     if (timeToPlanes.find(0) != timeToPlanes.end()) {
-        for (auto& plane : timeToPlanes[0]) {
-            // Check if a plane with this ID already exists
+        for (auto &planePtr : timeToPlanes[0]) {
             bool exists = false;
-            for (const auto& existingPlane : activePlanes) {
-                if (existingPlane->getId() == plane->getId()) {
+            for (const auto &existingPlane : activePlanes) {
+                if (existingPlane->getId() == planePtr->getId()) {
                     exists = true;
                     break;
                 }
             }
-            
             if (!exists) {
-                int planeId = plane->getId();
-                activePlanes.push_back(std::move(plane));
-                logRadarMessage("Added plane ID " + std::to_string(planeId) + " at time 0");
+                int pid = planePtr->getId();
+                activePlanes.push_back(std::move(planePtr));
+                logRadarMessage("Added plane ID " + std::to_string(pid) + " at time 0");
             }
         }
+        timeToPlanes.erase(0);
     }
-    
+
     Radar radar;
     std::vector<Plane*> planePointers;
-    for (const auto& plane : activePlanes) {
-        planePointers.push_back(plane.get());
+    planePointers.reserve(activePlanes.size());
+    for (auto &planeUptr : activePlanes) {
+        planePointers.push_back(planeUptr.get());
     }
     radar.detectAircraft(planePointers, 0.0);
-    
+
     double t = 0.0;
     while (running) {
         int currentTimeInt = static_cast<int>(t);
         if (timeToPlanes.find(currentTimeInt) != timeToPlanes.end()) {
-            for (auto& plane : timeToPlanes[currentTimeInt]) {
+            for (auto &planePtr : timeToPlanes[currentTimeInt]) {
                 bool exists = false;
-                int planeId = plane->getId();
-                
-                for (const auto& p : activePlanes) {
-                    if (p->getId() == planeId) {
+                for (const auto &p : activePlanes) {
+                    if (p->getId() == planePtr->getId()) {
                         exists = true;
                         break;
                     }
                 }
-                
                 if (!exists) {
-                    activePlanes.push_back(std::move(plane));
-                    logRadarMessage("Added plane ID " + std::to_string(planeId) + 
-                                  " at time " + std::to_string(currentTimeInt));
+                    activePlanes.push_back(std::move(planePtr));
+                    logRadarMessage("Added plane ID " +
+                                    std::to_string(activePlanes.back()->getId()) +
+                                    " at time " + std::to_string(currentTimeInt));
                 }
             }
-            
+            timeToPlanes.erase(currentTimeInt);
+
             planePointers.clear();
-            for (const auto& plane : activePlanes) {
-                planePointers.push_back(plane.get());
+            planePointers.reserve(activePlanes.size());
+            for (auto &planeUptr : activePlanes) {
+                planePointers.push_back(planeUptr.get());
             }
             radar.detectAircraft(planePointers, t);
         }
-        
+
         radar.update(t);
         sleep(1);
         t += 1.0;
